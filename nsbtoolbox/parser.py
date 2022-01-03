@@ -1,8 +1,10 @@
-import docx2txt
 import argparse
 import os
-from .sciencebowlquestion import ScienceBowlQuestion, TossUpBonus, Subject, QuestionType
 import re
+
+import docx2txt
+
+from .sciencebowlquestion import QuestionType, ScienceBowlQuestion, Subject, TossUpBonus
 
 TUB = ("TOSS-UP", "BONUS", "VISUAL BONUS")
 
@@ -31,7 +33,7 @@ MC_CHOICES = ("W)", "X)", "Y)", "Z)")
 
 
 def question_parser(input: str):
-
+    
     question_list = []
     pos = 0
 
