@@ -130,3 +130,26 @@ class ScienceBowlQuestion:
 
         if not isinstance(self.question_type, QuestionType):
             self.question_type = QuestionType.from_string(self.question_type)
+
+    def join_choices(self, choices):
+        newline = "\n"
+        if self.question_type is QuestionType.SHORT_ANSWER:
+            if choices == []:
+                return ""
+            else:
+                return " ".join([f"{idx + 1}) {v}" for idx, v in enumerate(choices)])
+        else:
+            wxyz = ("W)", "X)", "Y)", "Z)")
+            return f"{newline}".join(
+                [f"{wxyz[idx]} {v}" for idx, v in enumerate(choices)]
+            )
+
+    def __repr__(self):
+        newline = "\n"
+        if self.question_type is QuestionType.SHORT_ANSWER:
+            rep = f"{self.tu_b.value}{newline}{self.q_letter}) {self.subject.value}  —  {self.question_type.value}    {self.stem} {self.join_choices(self.choices)}{newline}{newline}ANSWER: {self.answer}{newline}"
+
+        else:
+            rep = f"{self.tu_b.value}{newline}{self.q_letter}) {self.subject.value}  —  {self.question_type.value}    {self.stem}{newline}{newline}{self.join_choices(self.choices)}{newline}{newline}ANSWER: {self.answer}{newline}"
+
+        return rep
