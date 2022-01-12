@@ -1,3 +1,4 @@
+from typing import Generator
 import zipfile
 import xml.etree.ElementTree
 import os
@@ -33,7 +34,7 @@ def validate_path(path_string: str) -> str:
         raise FileNotFoundError(f"No such file: {path_string}")
 
 
-def docx_to_txt_stream(path_to_docx: str) -> list:
+def docx_to_stream(path_to_docx: str) -> Generator:
     """Generator that reads a formatted Science Bowl round and yields XML paragraph objects.
 
     Parameters
@@ -42,8 +43,7 @@ def docx_to_txt_stream(path_to_docx: str) -> list:
 
     Returns
     -------
-    list
-        List of words in the target docx.
+    Generator
     """
 
     with zipfile.ZipFile(path_to_docx) as docx:
@@ -51,6 +51,22 @@ def docx_to_txt_stream(path_to_docx: str) -> list:
 
     for paragraph in tree.iter(PARA):
         yield "".join(list(paragraph.itertext()))
+
+
+def text_to_stream(path_to_txt: str) -> Generator:
+    """Generator that reads an unformatted Science Bowl text file and yields lines.
+
+    Parameters
+    ----------
+    path_to_txt : str
+
+    Yields
+    -------
+    Generator
+    """
+    with open(path_to_txt) as file:
+        for row in file:
+            yield row.strip()
 
 
 if __name__ == "__main__":
@@ -69,4 +85,7 @@ if __name__ == "__main__":
 
     path_to_data = validate_path(args.path)
 
-    raw_text = docx_to_txt_stream(path_to_data)
+    if path_to_data.endswith(".docx"):
+        raw_text = docx_to_stream(path_to_data)
+    elif path_to_data.endswith(".txt"):
+        raw_text = text_to_stream(path_to_data)
