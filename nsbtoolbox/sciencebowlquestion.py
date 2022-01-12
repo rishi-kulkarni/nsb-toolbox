@@ -116,6 +116,7 @@ class ScienceBowlQuestion:
     round: str = "N/A"
     q_letter: str = "N/A"
 
+    LOD: int = 0
     source: str = "Unknown"
     author: str = "Unknown"
     comments: str = ""
