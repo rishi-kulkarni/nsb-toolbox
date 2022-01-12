@@ -1,6 +1,8 @@
 import re
 from dataclasses import dataclass
+from typing import Generator
 from .sciencebowlquestion import QuestionType, ScienceBowlQuestion, Subject, TossUpBonus
+import string
 
 TUB = ("TOSS-UP", "BONUS", "VISUAL BONUS")
 
@@ -195,78 +197,155 @@ def check_choice_context(context: str, token_id: str):
         raise ValueError(f"Invalid context: {context}")
 
 
-def lexer(inputstream: list):
+def emit(current_token_list: list, ID: str) -> Token:
+    """Emits a token and clears the stack.
+
+    Parameters
+    ----------
+    current_token : list
+    ID : str
+
+    Returns
+    -------
+    Token
+    """
+    ret = Token(" ".join(current_token_list), ID)
+    current_token_list.clear()
+    return ret
+
+
+def lexer(inputstream: Generator):
     """Performs lexical analysis on a stream of input words.
 
     Parameters
     ----------
-    inputstream : list
-        List of strings representing words in a Science Bowl file.
+    inputstream : Generator
+        Yields lines of text from a Science Bowl file.
 
     Yields
     -------
     generator object
         Token generator
     """
-    iterator = enumerate(inputstream)
+    current_token = []
+    context = "START"
 
-    for idx, word in iterator:
+    for row in inputstream:
 
-        next_word = peek(inputstream, idx).upper()
-        current_word = word.upper()
+        for word in row.split():
 
-        if current_word == "ROUND":
-            if next_word.isdigit():
-                yield Token(int(next_word), "ROUNDNUM")
-                next(iterator, None)
-            else:
-                yield Token(word, "WORD")
+            current_token.append(word)
 
-        elif current_word in SUBJECT_ALIASES:
+            if context == "START":
 
-            if current_word in ("LIFE", "PHYSICAL", "EARTH"):
-                if next_word == "SCIENCE":
-                    yield Token(word + " Science", "SUBJECT")
-                    next(iterator, None)
-                elif (
-                    next_word.upper() == "AND"
-                    and peek(inputstream, idx, distance=2).upper() == "SPACE"
+                if word.upper() in ("TOSS-UP", "BONUS") and len(current_token) == 1:
+                    yield emit(current_token, "TUB")
+
+                elif word.upper() == "ROUND" and len(current_token) == 1:
+                    continue
+
+                elif word.strip(string.punctuation).isdigit():
+                    if current_token[0].upper() == "ROUND":
+                        yield emit(current_token, "ROUNDNUM")
+                    elif len(current_token) == 1:
+                        yield emit(current_token, "QNUM")
+
+                elif word.upper() in SUBJECT_ALIASES and len(current_token) == 1:
+                    if word.upper() in ("LIFE", "PHYSICAL", "EARTH"):
+                        continue
+                    else:
+                        yield emit(current_token, "SUBJECT")
+
+                elif word.upper() == "SCIENCE" and current_token[0].upper() in (
+                    "LIFE",
+                    "PHYSICAL",
                 ):
-                    yield Token("Earth and Space", "SUBJECT")
-                    next(iterator, None)
-                    next(iterator, None)
-            else:
-                yield Token(word, "SUBJECT")
+                    yield emit(current_token, "SUBJECT")
 
-        elif current_word == "MULTIPLE" and next_word == "CHOICE":
-            yield Token("Multiple Choice", "QTYPE")
-            next(iterator, None)
-        elif current_word == "SHORT" and next_word == "ANSWER":
-            yield Token("Short Answer", "QTYPE")
-            next(iterator, None)
-        elif current_word in ("MC", "SA"):
-            yield Token(word, "QTYPE")
+                elif word.upper() == "AND" and current_token[0].upper() == "EARTH":
+                    continue
 
-        elif current_word in TUB:
-            if next_word == "BONUS":
-                yield Token("VISUAL BONUS", "TUB")
-                next(iterator)
-            else:
-                yield Token(word, "TUB")
+                elif (
+                    word.upper() == "SPACE"
+                    and " ".join(current_token).upper() == "EARTH AND"
+                ):
+                    yield emit(current_token, "SUBJECT")
 
-        elif ")" in current_word:
-            if current_word.replace(")", "").isdigit():
-                yield Token(word, "NUMID")
-            elif current_word in MC_CHOICES:
-                yield Token(word, "WXYZ")
-            else:
-                yield Token(word, "WORD")
+                elif word.upper() in ("MC", "SA") and len(current_token) == 1:
+                    yield emit(current_token, "QTYPE")
+                    yield Token("", "STEM_START")
+                    context = "STEM"
 
-        elif current_word == "ANSWER:":
-            yield Token(word, "ANSWER")
+                elif word.upper() in ("MULTIPLE", "SHORT") and len(current_token) == 1:
+                    continue
 
-        else:
-            yield Token(word, "WORD")
+                elif word.upper() in ("CHOICE", "ANSWER") and current_token[
+                    0
+                ].upper() in ("MULTIPLE", "SHORT"):
+                    yield emit(current_token, "QTYPE")
+                    yield Token("", "STEM_START")
+                    context = "STEM"
+
+                else:
+                    raise ValueError(
+                        f"Unexpected token. Current stack is: {current_token} and current word is {word}"
+                    )
+
+        # next_word = peek(inputstream, idx).upper()
+        # word = word.upper()
+
+        # if word == "ROUND":
+        #     if next_word.isdigit():
+        #         yield Token(int(next_word), "ROUNDNUM")
+        #         next(iterator, None)
+        #     else:
+        #         yield Token(word, "WORD")
+
+        # elif word in SUBJECT_ALIASES:
+
+        #     if word in ("LIFE", "PHYSICAL", "EARTH"):
+        #         if next_word == "SCIENCE":
+        #             yield Token(word + " Science", "SUBJECT")
+        #             next(iterator, None)
+        #         elif (
+        #             next_word.upper() == "AND"
+        #             and peek(inputstream, idx, distance=2).upper() == "SPACE"
+        #         ):
+        #             yield Token("Earth and Space", "SUBJECT")
+        #             next(iterator, None)
+        #             next(iterator, None)
+        #     else:
+        #         yield Token(word, "SUBJECT")
+
+        # elif word == "MULTIPLE" and next_word == "CHOICE":
+        #     yield Token("Multiple Choice", "QTYPE")
+        #     next(iterator, None)
+        # elif word == "SHORT" and next_word == "ANSWER":
+        #     yield Token("Short Answer", "QTYPE")
+        #     next(iterator, None)
+        # elif word in ("MC", "SA"):
+        #     yield Token(word, "QTYPE")
+
+        # elif word in TUB:
+        #     if next_word == "BONUS":
+        #         yield Token("VISUAL BONUS", "TUB")
+        #         next(iterator)
+        #     else:
+        #         yield Token(word, "TUB")
+
+        # elif ")" in word:
+        #     if word.replace(")", "").isdigit():
+        #         yield Token(word, "NUMID")
+        #     elif word in MC_CHOICES:
+        #         yield Token(word, "WXYZ")
+        #     else:
+        #         yield Token(word, "WORD")
+
+        # elif word == "ANSWER:":
+        #     yield Token(word, "ANSWER")
+
+        # else:
+        #     yield Token(word, "WORD")
 
 
 def peek(inputstream: list, idx: int, distance=1):
