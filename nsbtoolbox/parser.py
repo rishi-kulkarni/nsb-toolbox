@@ -1,7 +1,6 @@
-import re
 from dataclasses import dataclass
 from typing import Generator
-from .sciencebowlquestion import QuestionType, ScienceBowlQuestion, Subject, TossUpBonus
+from .sciencebowlquestion import ScienceBowlQuestion
 import string
 
 TUB = ("TOSS-UP", "BONUS", "VISUAL BONUS")
@@ -29,6 +28,8 @@ QUESTION_TYPES = ("Multiple Choice", "MC", "Short Answer", "SA")
 
 MC_CHOICES = ("W)", "X)", "Y)", "Z)")
 
+METADATA_FIELDS = ("SET:", "SOURCE:", "LOD:", "ROUND:", "QLETTER:", "AUTHOR:")
+
 
 @dataclass
 class Token:
@@ -53,7 +54,7 @@ def parser(inputstream):
     ValueError
         Upon reaching an unexpected token.
     """
-    lexer_obj = lexer(inputstream)
+    lexer_obj = tokenizer(inputstream)
 
     context = "PRE-Q"
     choice_context = 0
@@ -191,8 +192,11 @@ def check_choice_context(context: str, token_id: str):
     """
     if context in MC_CHOICES:
         return token_id == MC_CHOICES[MC_CHOICES.index(context) + 1]
-    elif context.replace(")", "").isdigit():
-        return int(token_id.replace(")", "")) == int(context.replace(")", "")) + 1
+    elif context.strip(string.punctuation).isdigit():
+        return (
+            int(token_id.strip(string.punctuation))
+            == int(context.strip(string.punctuation)) + 1
+        )
     else:
         raise ValueError(f"Invalid context: {context}")
 
@@ -214,7 +218,7 @@ def emit(current_token_list: list, ID: str) -> Token:
     return ret
 
 
-def lexer(inputstream: Generator):
+def tokenizer(inputstream: Generator):
     """Performs lexical analysis on a stream of input words.
 
     Parameters
@@ -231,6 +235,9 @@ def lexer(inputstream: Generator):
     context = "START"
 
     for row in inputstream:
+
+        if row == "":
+            row = "<BLANKLINE>"
 
         for word in row.split():
 
@@ -267,13 +274,12 @@ def lexer(inputstream: Generator):
 
                 elif (
                     word.upper() == "SPACE"
-                    and " ".join(current_token).upper() == "EARTH AND"
+                    and " ".join(current_token).upper() == "EARTH AND SPACE"
                 ):
                     yield emit(current_token, "SUBJECT")
 
                 elif word.upper() in ("MC", "SA") and len(current_token) == 1:
                     yield emit(current_token, "QTYPE")
-                    yield Token("", "STEM_START")
                     context = "STEM"
 
                 elif word.upper() in ("MULTIPLE", "SHORT") and len(current_token) == 1:
@@ -283,109 +289,125 @@ def lexer(inputstream: Generator):
                     0
                 ].upper() in ("MULTIPLE", "SHORT"):
                     yield emit(current_token, "QTYPE")
-                    yield Token("", "STEM_START")
                     context = "STEM"
 
+                elif word.upper() == "<BLANKLINE>":
+                    current_token.pop()
+
+                elif word.upper() in METADATA_FIELDS:
+                    current_token.clear()
+                    context = "METADATA"
+                    current_token.append(word)
+
                 else:
-                    raise ValueError(
-                        f"Unexpected token. Current stack is: {current_token} and current word is {word}"
+                    current_token.pop()
+
+            elif context == "STEM":
+
+                if word.upper() == "<BLANKLINE>":
+                    current_token.pop()
+
+                elif word.upper() == "W)":
+                    current_token.pop()
+                    yield emit(current_token, "STEM")
+                    context = "CHOICES"
+                    choice_context = word.upper()
+
+                elif (
+                    any(p in word.upper() for p in string.punctuation)
+                    and word.strip(string.punctuation) == "1"
+                ):
+                    current_token.pop()
+                    yield emit(current_token, "STEM")
+                    context = "CHOICES"
+                    choice_context = word.upper()
+
+                elif word.upper() == "ANSWER:":
+                    current_token.pop()
+                    yield emit(current_token, "STEM")
+                    context = "ANSWER"
+
+                else:
+                    continue
+
+            elif context == "CHOICES":
+
+                if word.upper() in MC_CHOICES:
+                    if check_choice_context(choice_context, word.upper()):
+                        current_token.pop()
+                        current_token[-1] = current_token[-1].rstrip(",.;")
+                        yield emit(current_token, "CHOICE")
+                        choice_context = word.upper()
+                    else:
+                        continue
+
+                elif (
+                    any(p in word.upper() for p in string.punctuation)
+                    and word.strip(string.punctuation).isdigit()
+                ):
+                    if check_choice_context(choice_context, word.upper()):
+                        current_token.pop()
+                        current_token[-1] = current_token[-1].rstrip(",.;")
+                        yield emit(current_token, "CHOICE")
+                        choice_context = word.upper()
+                    else:
+                        continue
+
+                elif word.upper() in ("ANSWER", "<BLANKLINE>"):
+                    current_token.pop()
+                    current_token[-1] = current_token[-1].rstrip(",.;")
+                    context = "ANSWER"
+                    yield emit(current_token, "CHOICE")
+
+                else:
+                    continue
+
+            elif context == "ANSWER":
+
+                if word.upper() in METADATA_FIELDS:
+                    context = "METADATA"
+                    current_token.pop()
+                    yield emit(current_token, "ANSWER")
+                    current_token.append(word)
+
+                elif word.upper() == "<BLANKLINE>":
+                    current_token.pop()
+                    context = "START"
+                    yield emit(current_token, "ANSWER")
+
+                elif word.upper() == "ANSWER:":
+                    current_token.pop()
+
+                else:
+                    continue
+
+            elif context == "METADATA":
+
+                if word.upper() in METADATA_FIELDS and len(current_token) > 1:
+                    current_token.pop()
+                    yield emit(
+                        current_token[1:],
+                        current_token[0].strip(string.punctuation).upper(),
                     )
+                    current_token.clear()
+                    current_token.append(word)
 
-        # next_word = peek(inputstream, idx).upper()
-        # word = word.upper()
+                elif word.upper() == "<BLANKLINE>":
+                    current_token.pop()
+                    context = "START"
+                    yield emit(
+                        current_token[1:],
+                        current_token[0].strip(string.punctuation).upper(),
+                    )
+                    current_token.clear()
 
-        # if word == "ROUND":
-        #     if next_word.isdigit():
-        #         yield Token(int(next_word), "ROUNDNUM")
-        #         next(iterator, None)
-        #     else:
-        #         yield Token(word, "WORD")
+                else:
+                    continue
 
-        # elif word in SUBJECT_ALIASES:
-
-        #     if word in ("LIFE", "PHYSICAL", "EARTH"):
-        #         if next_word == "SCIENCE":
-        #             yield Token(word + " Science", "SUBJECT")
-        #             next(iterator, None)
-        #         elif (
-        #             next_word.upper() == "AND"
-        #             and peek(inputstream, idx, distance=2).upper() == "SPACE"
-        #         ):
-        #             yield Token("Earth and Space", "SUBJECT")
-        #             next(iterator, None)
-        #             next(iterator, None)
-        #     else:
-        #         yield Token(word, "SUBJECT")
-
-        # elif word == "MULTIPLE" and next_word == "CHOICE":
-        #     yield Token("Multiple Choice", "QTYPE")
-        #     next(iterator, None)
-        # elif word == "SHORT" and next_word == "ANSWER":
-        #     yield Token("Short Answer", "QTYPE")
-        #     next(iterator, None)
-        # elif word in ("MC", "SA"):
-        #     yield Token(word, "QTYPE")
-
-        # elif word in TUB:
-        #     if next_word == "BONUS":
-        #         yield Token("VISUAL BONUS", "TUB")
-        #         next(iterator)
-        #     else:
-        #         yield Token(word, "TUB")
-
-        # elif ")" in word:
-        #     if word.replace(")", "").isdigit():
-        #         yield Token(word, "NUMID")
-        #     elif word in MC_CHOICES:
-        #         yield Token(word, "WXYZ")
-        #     else:
-        #         yield Token(word, "WORD")
-
-        # elif word == "ANSWER:":
-        #     yield Token(word, "ANSWER")
-
-        # else:
-        #     yield Token(word, "WORD")
-
-
-def peek(inputstream: list, idx: int, distance=1):
-    if idx + distance < len(inputstream):
-        return inputstream[idx + distance]
-    else:
-        return ""
-
-
-def question_parser(input: str):
-
-    question_list = []
-    pos = 0
-
-    def question_constructor():
-        nonlocal pos
-        constructor_dict = {}
-
-        # determine whether a question is a toss-up or a bonus
-        tub_finder = re.compile("|".join(TUB))
-        tub = tub_finder.match(input[pos:])
-        while not tub:
-            pos += 1
-            tub = tub_finder.match(input[pos:])
-        constructor_dict["tu_b"] = TossUpBonus.from_string(tub.group(0))
-        pos += tub.end()
-
-        # determine the subject and question question type
-        sub_q_finder = re.compile(
-            f"({'|'.join(SUBJECT_ALIASES)}) .*({'|'.join(QUESTION_TYPES)})"
+    if context == "ANSWER" and len(current_token) > 0:
+        yield emit(current_token, "ANSWER")
+    elif context == "METADATA" and len(current_token) > 0:
+        yield emit(
+            current_token[1:],
+            current_token[0].strip(string.punctuation).upper(),
         )
-        sub_q = sub_q_finder.match(input[pos:])
-        while not sub_q:
-            pos += 1
-            sub_q = sub_q_finder.match(input[pos:])
-        constructor_dict["subject"] = Subject.from_string(sub_q.group(1))
-        constructor_dict["question_type"] = QuestionType.from_string(sub_q.group(2))
-        pos += sub_q.end()
-
-        stem_start = pos
-
-        if constructor_dict["question_type"] is QuestionType.MULTIPLE_CHOICE:
-            pass
