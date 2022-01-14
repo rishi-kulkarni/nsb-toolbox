@@ -277,7 +277,6 @@ def process_question_cell(cell: _Cell):
         current_choice = 0
 
         for idx, para in enumerate(cell.paragraphs[stem_idx:]):
-            print(idx)
             choice_match = choices_re.match(para.text)
 
             # if the next paragraph after the stem doesn't start with
@@ -292,12 +291,11 @@ def process_question_cell(cell: _Cell):
                 delete_paragraph(para)
 
             elif choice_match:
-                choice_start_idx = idx
                 # delete paragraphs between end of stem and start of first
                 # choice, then insert a blank paragraph. only do this if
                 # we are looking for W), the first choice
                 if current_choice == 0:
-                    for to_delete in cell.paragraphs[stem_idx:choice_start_idx]:
+                    for to_delete in cell.paragraphs[stem_idx:idx]:
                         delete_paragraph(to_delete)
                     para.insert_paragraph_before("")
 
@@ -329,7 +327,9 @@ def process_question_cell(cell: _Cell):
                 if current_choice == 4:
                     print("Found all choices")
                     current_choice = 0
-                    choices_end_idx = [x.text for x in cell.paragraphs].index(para.text)
+                    # this is not really the stem idx, but it makes putting a space
+                    # before the answer line easier
+                    stem_idx = [x.text for x in cell.paragraphs].index(para.text)
                     break
 
             else:
@@ -341,6 +341,48 @@ def process_question_cell(cell: _Cell):
             for paragraph in cell.paragraphs:
                 for run in paragraph.runs:
                     run.font.highlight_color = WD_COLOR_INDEX.RED
+
+    # finally, we need to find the answer
+    if q_type is not None:
+
+        answer_re = _compile(r"\s*(ANSWER:)\s*")
+
+        for idx, para in enumerate(cell.paragraphs[stem_idx:]):
+            answer_match = answer_re.match(para.text)
+
+            if answer_match:
+
+                # delete paragraphs between end of stem and start of first
+                # choice, then insert a blank paragraph. only do this if
+                # we are looking for W), the first choice
+                for to_delete in cell.paragraphs[stem_idx:idx]:
+                    delete_paragraph(to_delete)
+                para.insert_paragraph_before("")
+
+                # set the font to all-caps for every run in the answer line
+                for run in para.runs:
+                    run.font.all_caps = True
+
+                # TODO: if the question is multiple choice and the answer is only a
+                # letter, paste in the rest of the answer. probably requires copying
+                # the paragraph that contains the right answer.
+
+                # index the end of the question
+                question_end_idx = [x.text for x in cell.paragraphs].index(para.text)
+
+                break
+
+        # highlight cell red if we can't find the answer line
+        else:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.highlight_color = WD_COLOR_INDEX.RED
+
+        # delete any extra whitespace after the end of the question
+        if answer_match:
+            for para in cell.paragraphs[question_end_idx:]:
+                if para.text.strip() == "":
+                    delete_paragraph(para)
 
 
 def process_row(nsb_table_row):
