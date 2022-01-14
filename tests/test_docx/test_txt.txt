@@ -1,0 +1,94 @@
+1 TOSS-UP ES MC What is the term for the region around a star in which an orbiting planet can have liquid water?
+
+W) Humid territory
+X) Habitable zone
+Y) Liquid zone
+Z) Livable territory
+
+ANSWER: X
+
+LOD: 2
+Source: Foundations of Astronomy (2019), Seeds and Backman, pg 589
+
+2 BONUS ES MC Widmanstatten patterns are associated with what type of meteorite?
+
+W) Iron
+X) Stony
+Y) Chondrites
+Z) Achondrites
+
+ANSWER: W
+
+LOD: 3
+Source: Foundations of Astronomy (2019), Seeds and Backman, pg 553
+
+3 TOSS-UP ES SA The Kirkwood gaps in the asteroid belt are thought to be caused by orbital resonance with what planet?
+
+ANSWER: JUPITER
+
+LOD: 3
+Source:  Foundations of Astronomy (2019), Seeds and Backman, pg 557
+
+4 BONUS ES SA Rank the following three moons in terms of increasing size: 1) Titania; 2) Oberon; 3) Earth's moon.
+
+ANSWER: 1, 2, 3
+
+LOD: 3
+Source:  Foundations of Astronomy (2019), Seeds and Backman, pg 557
+
+5 TOSS-UP ES SA What is the term for the Kuiper Belt objects trapped in a 3:2 resonance with Neptune?
+
+ANSWER: PLUTINOS
+
+LOD: 4
+Source:  Foundations of Astronomy (2019), Seeds and Backman, pg 545
+
+6 BONUS ES MC What is the most common gas in Saturn's atmosphere?
+
+W) Helium
+X) Water
+Y) Hydrogen
+Z) Methane
+
+ANSWER: W
+
+LOD: 3
+Source:  Foundations of Astronomy (2019), Seeds and Backman, pg 497
+
+7 TOSS-UP ES SA What is the largest planet in our Solar System?
+
+ANSWER: JUPITER
+
+LOD: 1
+Source:  Foundations of Astronomy (2019), Seeds and Backman, pg 499
+
+8 BONUS ES MC Which of the following best explains why most of Venus's volcanoes are shield volcanoes?
+
+W) Venus has a much hotter core than Earth, so hot spots are more common
+X) Horizontal crust motion on Venus is too fast for composite volcanoes to develop
+Y) Venus has no notable tectonic activity
+Z) The composition of Venus's crust prevents the formation of composite volcanoes
+
+ANSWER: Y) VENUS HAS NO NOTABLE TECTONIC ACTIVITY
+
+LOD: 5
+Source:  Foundations of Astronomy (2019), Seeds and Backman, pg 470
+
+9 TOSS-UP ES MC What is the term for the powdered rock that covers the Moon's surface?
+
+W) Breccia
+X) Gneiss
+Y) Basalt
+Z) Regolith
+
+ANSWER: Z) REGOLITH
+
+LOD: 4
+Source:  Foundations of Astronomy (2019), Seeds and Backman, pg 450
+
+10 BONUS ES SA Mercury is trapped in a 3:2 orbital resonance with what other celestial body?
+
+ANSWER: THE SUN
+
+LOD: 3
+Source:  Foundations of Astronomy (2019), Seeds and Backman, pg 457
