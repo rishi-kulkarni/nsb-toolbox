@@ -74,8 +74,8 @@ class Subject(Enum):
 
 
 class QuestionType(Enum):
-    MULTIPLE_CHOICE = "MULTIPLE CHOICE"
-    SHORT_ANSWER = "SHORT ANSWER"
+    MULTIPLE_CHOICE = "Multiple Choice"
+    SHORT_ANSWER = "Short Answer"
 
     @staticmethod
     def from_string(label):
@@ -95,7 +95,7 @@ class QuestionType(Enum):
             QuestionType.SHORT_ANSWER: ("SHORT ANSWER", "SA"),
         }
         for enum_type in _ALIASES.keys():
-            if label.upper() in _ALIASES[enum_type]:
+            if label.upper() in (x.upper() for x in _ALIASES[enum_type]):
                 return enum_type
         else:
             raise ValueError(f"{label} is not a valid Subject")
