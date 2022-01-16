@@ -293,22 +293,6 @@ def _compile(regex: str):
 
 def format_question_cell(cell: _Cell) -> _Cell:
 
-    # this function performs two passes on each question
-    # the first pass removes all whitespace paragraphs
-    # and any left or right padding
-
-    for para in cell.paragraphs:
-        if para.text.strip() == "":
-            delete_paragraph(para)
-        else:
-            for run in para.runs:
-                if run.text.strip() == "":
-                    delete_run(run)
-            para.runs[0].text = para.runs[0].text.lstrip()
-            para.runs[-1].text = para.runs[-1].text.rstrip()
-
-    # the second pass identifies the sections of the questions
-
     state = QuestionFormatterState.Q_START
 
     q_type = None
@@ -346,16 +330,10 @@ def format_question_cell(cell: _Cell) -> _Cell:
                     q_type_run.italic = True
 
                 else:
-                    # unfortunately, the start of a question might be split up across
-                    # several runs if a malicious actor did the formatting. this is
-                    # solvable, but I will take care of it later. in the meantime,
-                    # the cell will be highlighted red if the question start is not
-                    # in a single run.
-
-                    # TODO: if no individual run contains the question start, mix
-                    # and match runs until it is found. then, delete all of those runs
-                    # except the last, combine all of them, and strip any matching text
-                    # out of the next one.
+                    # unfortunately, if someone has italicized a single
+                    # letter in the question start or something, we
+                    # will have a problem. in this case, highlight
+                    # the question.
                     highlight_cell_text(cell, WD_COLOR_INDEX.RED)
                     return cell
 
@@ -403,9 +381,8 @@ def format_question_cell(cell: _Cell) -> _Cell:
                     # update the choice we're looking for
                     current_choice += 1
                 else:
-                    # same problem as above, it is possible that the start of
-                    # a choice is spread out over multiple runs.
-                    # TODO: fix this problem.
+                    # same problem as above, it is possible that someone
+                    # italicized half of the choice start.
                     highlight_cell_text(cell, WD_COLOR_INDEX.RED)
                     return cell
 
@@ -520,9 +497,9 @@ def format_subject_cell(cell: _Cell) -> _Cell:
 def process_row(nsb_table_row: _Row) -> _Row:
 
     cells_list = nsb_table_row.cells
-    tub_cell = cells_list[0]
-    subject_cell = cells_list[1]
-    ques_cell = cells_list[2]
+    tub_cell = preprocess_cell(cells_list[0])
+    subject_cell = preprocess_cell(cells_list[1])
+    ques_cell = preprocess_cell(cells_list[2])
 
     # make sure first cell says TOSS-UP, BONUS, or VISUAL BONUS and nothing else
     format_tub_cell(tub_cell)
