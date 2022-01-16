@@ -116,18 +116,7 @@ def preprocess_cell(cell: _Cell) -> _Cell:
     """
     for para in cell.paragraphs:
 
-        # this pass combines runs that have the same font properties
-        # editing an XML file splits a run, so this is necessary
-        # it left-pads the paragraph with empty runs, which will
-        # be cleaned up in a later pass.
-
-        for idx, run in enumerate(para.runs[:-1]):
-            if compare_run_styles(run, para.runs[idx + 1]):
-                para.runs[idx + 1].text = run.text + para.runs[idx + 1].text
-                run.text = ""
-
-        # this pass deletes cruft created by the prior pass and coerces
-        # the font of any whitespace-only runs to the document style
+        # this pass coerces the font of any whitespace-only runs to the document style
         for run in para.runs:
             # if there are empty runs, delete them
             if run.text == "":
@@ -143,9 +132,16 @@ def preprocess_cell(cell: _Cell) -> _Cell:
                     run.font.subscript
                 ) = run.font.superscript = run.font.underline = None
 
+        # this pass combines runs that have the same font properties
+        # editing an XML file splits a run, so this is necessary
+        for run_1, run_2 in zip(para.runs[:-1], para.runs[1:]):
+            if compare_run_styles(run_1, run_2):
+                run_2.text = run_1.text + run_2.text
+                delete_run(run_1)
+
         # finally, delete any left padding or right padding for cells containing text
         # delete paragraphs that are empty
-        if len(para.runs) == 0:
+        if para.text.strip() == "":
             delete_paragraph(para)
         else:
             para.runs[0].text = para.runs[0].text.lstrip()
