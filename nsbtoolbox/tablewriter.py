@@ -1,14 +1,18 @@
-import docx
-from typing import Iterable
-from docx import Document
-from docx.shared import Inches
-from docx.oxml.shared import OxmlElement, qn
-from docx.enum.text import WD_COLOR_INDEX
-from docx.table import _Cell
-from functools import lru_cache
 import re
-from .sciencebowlquestion import TossUpBonus, Subject, QuestionType
 from copy import deepcopy
+from enum import Enum
+from functools import lru_cache
+from typing import Optional
+
+from docx import Document
+from docx.enum.text import WD_COLOR_INDEX
+from docx.oxml.shared import OxmlElement, qn
+from docx.shared import Inches, Pt
+from docx.table import _Cell, _Row
+from docx.text.paragraph import Paragraph
+from docx.text.run import Run
+
+from .sciencebowlquestion import QuestionType, Subject, TossUpBonus
 
 COL_WIDTHS = (
     0.72,
@@ -25,6 +29,12 @@ COL_WIDTHS = (
     1.51,
     1.44,
 )
+
+
+class QuestionFormatterState(Enum):
+    Q_START = 0
+    CHOICES = 1
+    ANSWER = 2
 
 
 def insert_run_at_position(par, pos, txt=""):
@@ -66,14 +76,91 @@ def copy_run_format(run_src, run_dst):
     run_dst._r.remove(rPr_target)
 
 
-def split_run_at(par: docx.text.paragraph.Paragraph, run_idx: int, split_at: int):
+def compare_run_styles(run_1: Run, run_2: Run) -> bool:
+    """Nonexhaustively compares two runs to check if they have
+    the same font. Science Bowl only uses italic, bold, all caps,
+    superscript, subscript, and underline, so only those are
+    compared.
+
+    Parameters
+    ----------
+    run_1, run_2 : Run
+
+    Returns
+    -------
+    bool
+    """
+    font_1 = run_1.font
+    font_2 = run_2.font
+
+    return (
+        (font_1.italic == font_2.italic)
+        and (font_1.bold == font_2.bold)
+        and (font_1.all_caps == font_2.all_caps)
+        and (font_1.superscript == font_2.superscript)
+        and (font_1.subscript == font_2.subscript)
+        and (font_1.underline == font_1.underline)
+    )
+
+
+def preprocess_cell(cell: _Cell) -> _Cell:
+    """Multipass cleaning function for table cells.
+
+    Parameters
+    ----------
+    cell : _Cell
+
+    Returns
+    -------
+    _Cell
+    """
+    for para in cell.paragraphs:
+
+        # this pass combines runs that have the same font properties
+        # editing an XML file splits a run, so this is necessary
+        # it left-pads the paragraph with empty runs, which will
+        # be cleaned up in a later pass.
+
+        for idx, run in enumerate(para.runs[:-1]):
+            if compare_run_styles(run, para.runs[idx + 1]):
+                para.runs[idx + 1].text = run.text + para.runs[idx + 1].text
+                run.text = ""
+
+        # this pass deletes cruft created by the prior pass and coerces
+        # the font of any whitespace-only runs to the document style
+        for run in para.runs:
+            # if there are empty runs, delete them
+            if run.text == "":
+                delete_run(run)
+            # if there are weirdly formatted run that is only whitespace, strip
+            # their formatting
+            elif run.text.strip() == "":
+                run.font.italic = (
+                    run.font.bold
+                ) = (
+                    run.font.all_caps
+                ) = (
+                    run.font.subscript
+                ) = run.font.superscript = run.font.underline = None
+
+        # finally, delete any left padding or right padding for cells containing text
+        # delete paragraphs that are empty
+        if len(para.runs) == 0:
+            delete_paragraph(para)
+        else:
+            para.runs[0].text = para.runs[0].text.lstrip()
+            para.runs[-1].text = para.runs[-1].text.rstrip()
+
+    return cell
+
+
+def split_run_at(par: Paragraph, run: Run, split_at: int):
     """Splits a run at a specified index.
 
     Parameters
     ----------
-    par : docx.text.paragraph.Paragraph
-    run_idx : int
-        Index of run to be split.
+    par : Paragraph
+    run : Run
     split_at : int
         Index of split location in the run.
 
@@ -81,7 +168,6 @@ def split_run_at(par: docx.text.paragraph.Paragraph, run_idx: int, split_at: int
     -------
     list of runs
     """
-    run = par.runs[run_idx]
     txt = run.text
 
     if not isinstance(split_at, int):
@@ -98,7 +184,7 @@ def split_run_at(par: docx.text.paragraph.Paragraph, run_idx: int, split_at: int
     return new_runs
 
 
-def shade_cells(cells: Iterable, shade: str):
+def shade_columns(column, shade: str):
     """Shades a list of cells in-place with a hex color value.
 
     Parameters
@@ -108,23 +194,24 @@ def shade_cells(cells: Iterable, shade: str):
     shade : str
         Hexadecimal color value
     """
-    for cell in cells:
+    for cell in column.cells:
         tcPr = cell._tc.get_or_add_tcPr()
         tcVAlign = OxmlElement("w:shd")
         tcVAlign.set(qn("w:fill"), shade)
         tcPr.append(tcVAlign)
 
 
-def make_jans_shadings(row):
+def make_jans_shadings(table):
     """Shades the 4, 6, 7, and 8th cells in a row the appropriate colors.
 
     Parameters
     ----------
     row : Document.rows object
     """
-    shade_cells([row.cells[3]], "#FFCC99")
-    shade_cells([row.cells[5]], "#e5dfec")
-    shade_cells([row.cells[6], row.cells[7]], "#daeef3")
+    shade_columns(table.columns[3], "#FFCC99")
+    shade_columns(table.columns[5], "#e5dfec")
+    shade_columns(table.columns[6], "#daeef3")
+    shade_columns(table.columns[7], "#daeef3")
 
 
 def delete_paragraph(paragraph):
@@ -149,20 +236,28 @@ def clear_cell(cell):
     first_para.runs[0].text = ""
 
 
-def initialize_table(path: str) -> Document:
+def initialize_table(nrows=0, path: Optional[str] = None) -> Document:
     """Initializes a docx file containing the Science Bowl header row.
 
     Parameters
     ----------
-    path : str
+    nrows : int, optional
+        Number of extra rows to append to the table, by default 0
+
+    path : Optional[str], optional
         Path that the docx file should be saved to.
+        If None, merely returns the document, by default None
 
     Returns
     -------
     Document
     """
     document = Document()
-    table = document.add_table(rows=1, cols=13)
+    font = document.styles["Normal"].font
+    font.name = "Times New Roman"
+    font.size = Pt(11)
+
+    table = document.add_table(rows=1 + nrows, cols=13)
 
     table.style = "Table Grid"
     table.autofit = False
@@ -183,13 +278,14 @@ def initialize_table(path: str) -> Document:
     table.cell(0, 11).paragraphs[0].add_run("Comments")
     table.cell(0, 12).paragraphs[0].add_run("Subcat")
 
-    for idx, inches in enumerate(COL_WIDTHS):
-        col = table.columns[idx].cells[0]
-        col.width = Inches(inches)
+    make_jans_shadings(table)
 
-    make_jans_shadings(table.rows[0])
+    for idx, column in enumerate(table.columns):
+        for cell in column.cells:
+            cell.width = Inches(COL_WIDTHS[idx])
 
-    document.save(path)
+    if path is not None:
+        document.save(path)
 
     return document
 
@@ -199,164 +295,141 @@ def _compile(regex: str):
     return re.compile(regex, re.IGNORECASE)
 
 
-def process_question_cell(cell: _Cell):
+def format_question_cell(cell: _Cell) -> _Cell:
+
+    # this function performs two passes on each question
+    # the first pass removes all whitespace paragraphs
+    # and any left or right padding
+
+    for para in cell.paragraphs:
+        if para.text.strip() == "":
+            delete_paragraph(para)
+        else:
+            for run in para.runs:
+                if run.text.strip() == "":
+                    delete_run(run)
+            para.runs[0].text = para.runs[0].text.lstrip()
+            para.runs[-1].text = para.runs[-1].text.rstrip()
+
+    # the second pass identifies the sections of the questions
+
+    state = QuestionFormatterState.Q_START
+
     q_type = None
+
     q_type_possible = _compile(r"\s*(Short Answer|SA|Multiple Choice|MC)\s*")
+    choices_re = _compile(r"\s*(W\)|X\)|Y\)|Z\))\s*")
+    answer_re = _compile(r"\s*(ANSWER:)\s*")
 
-    for idx, para in enumerate(cell.paragraphs):
-        # go through the cell line-by-line until we find the start of a question
-        q_type_match = q_type_possible.match(para.text)
-        if q_type_match:
-            q_start_line = idx
-            # delete any paragraphs above the start of the question
-            for to_delete in cell.paragraphs[:q_start_line]:
-                delete_paragraph(to_delete)
+    choices = ("W)", "X)", "Y)", "Z)")
+    current_choice = 0
 
-            # go through the line run-by-run until we find the start of the question
-            # there can be infinite empty runs anywhere in a document
-            for run_idx, run in enumerate(para.runs):
-                run_match = q_type_possible.match(run.text)
+    for para in cell.paragraphs:
+
+        if state is QuestionFormatterState.Q_START:
+
+            # go through the cell line-by-line and perform an
+            # operation based on state
+            q_type_match = q_type_possible.match(para.text)
+            if q_type_match:
+                # the first run of the paragraph should contain the question start
+                q_type_run = para.runs[0]
+                run_match = q_type_possible.match(q_type_run.text)
 
                 if run_match:
                     q_type = QuestionType.from_string(run_match.group(1))
-                    for to_delete in para.runs[:run_idx]:
-                        delete_run(to_delete)
-                    run_length = len(run.text)
+                    run_length = len(q_type_run.text)
                     # if the run contains more than the question type, split
                     # the run into two
                     if run_match.span()[1] < run_length:
-                        run, _ = split_run_at(para, run_idx, run_match.span()[1])
+                        q_type_run, _ = split_run_at(
+                            para, q_type_run, run_match.span()[1]
+                        )
 
-                    run.text = q_type.value
-                    run.italic = True
+                    q_type_run.text = q_type.value
+                    q_type_run.italic = True
 
-                    break
+                else:
+                    # unfortunately, the start of a question might be split up across
+                    # several runs if a malicious actor did the formatting. this is
+                    # solvable, but I will take care of it later. in the meantime,
+                    # the cell will be highlighted red if the question start is not
+                    # in a single run.
 
-            else:
-                # unfortunately, the start of a question might be split up across
-                # several runs if a malicious actor did the formatting. this is
-                # solvable, but I will take care of it later. in the meantime,
-                # the cell will be highlighted red if the question start is not
-                # in a single run.
+                    # TODO: if no individual run contains the question start, mix
+                    # and match runs until it is found. then, delete all of those runs
+                    # except the last, combine all of them, and strip any matching text
+                    # out of the next one.
+                    highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+                    return cell
 
-                # TODO: if no individual run contains the question start, mix
-                # and match runs until it is found. then, delete all of those runs
-                # except the last, combine all of them, and strip any matching text
-                # out of the next one.
-                for paragraph in cell.paragraphs:
-                    for run in paragraph.runs:
-                        run.font.highlight_color = WD_COLOR_INDEX.RED
+                # now, the first part of the stem is the second run
+                # if it's not left-padded with 4 spaces, make sure it is
+                # doing it this way ensures that any other formatting in
+                # the stem is preserved (superscripts, subscripts, etc.)
+                stem_run = para.runs[1]
+                if not stem_run.text.startswith("    "):
+                    stem_run.text = "".join(["    ", stem_run.text.lstrip()])
 
-            # now, the first part of the stem is the second run
-            # if it's not left-padded with 4 spaces, make sure it is
-            # doing it this way ensures that any other formatting in
-            # the stem is preserved (superscripts, subscripts, etc.)
-            stem_run = para.runs[1]
-            if not stem_run.text.startswith("    "):
-                stem_run.text = "".join(["    ", stem_run.text.lstrip()])
+                if q_type is QuestionType.MULTIPLE_CHOICE:
+                    state = QuestionFormatterState.CHOICES
+                else:
+                    state = QuestionFormatterState.ANSWER
 
-            # need to know the last index the stem is on so we can make
-            # sure there is a blank line between the question and the answer
-            # since we may have deleted paragraphs, have to look up the
-            # index again
-            stem_idx = [x.text for x in cell.paragraphs].index(para.text)
-            break
-    else:
-        # if the start of the question is not found, indicate an error
-        # by highlighting the cell red
-        for paragraph in cell.paragraphs:
-            for run in paragraph.runs:
-                run.font.highlight_color = WD_COLOR_INDEX.RED
+        elif state is QuestionFormatterState.CHOICES:
 
-    # if the question is multiple choice, the next line of interest
-    # will start with W), X), Y), or Z). all options will be considered
-    # because people frequently make typos.
-    if q_type is QuestionType.MULTIPLE_CHOICE:
-        choices = ("W)", "X)", "Y)", "Z)")
-        choices_re = _compile(r"\s*(W\)|X\)|Y\)|Z\))\s*")
-        current_choice = 0
-
-        for idx, para in enumerate(cell.paragraphs[stem_idx:]):
             choice_match = choices_re.match(para.text)
+            wrong_answer_match = answer_re.match(para.text)
 
-            # if the next paragraph after the stem doesn't start with
-            # W)-Z), it's likely that there's a paragraph break in the
-            # middle of the stem. thus ignore the paragraph and update
-            # the index representing the end of the stem
-            if para.text.strip() != "" and not choice_match and current_choice == 0:
-                stem_idx += 1
-                continue
+            # if we match an answer line while looking for choices, maybe
+            # the question wasn't actually multiple choice. highlight the
+            # question type to indicate this
+            if wrong_answer_match:
+                q_type_run.font.highlight_color = WD_COLOR_INDEX.RED
+                return cell
 
-            elif para.text.strip() == "" and current_choice > 0:
-                delete_paragraph(para)
-
-            elif choice_match:
-                # delete paragraphs between end of stem and start of first
-                # choice, then insert a blank paragraph. only do this if
-                # we are looking for W), the first choice
+            if choice_match:
+                # insert a blank paragraph before this one. only
+                # do this if we are looking for W), the first choice
                 if current_choice == 0:
-                    for to_delete in cell.paragraphs[stem_idx:idx]:
-                        delete_paragraph(to_delete)
                     para.insert_paragraph_before("")
 
-                # next, find the run that contains the start of the choice
-                for run_idx, run in enumerate(para.runs):
-                    run_match = choices_re.match(run.text)
-                    if run_match:
-                        # delete any prior runs
-                        for to_delete in para.runs[:run_idx]:
-                            delete_run(to_delete)
-                        # if we matched the wrong choice, replace it with
-                        # the right choice
-                        if run_match.group(1) != choices[current_choice]:
-                            run.text = run.text.replace(
-                                run_match.group(1), choices[current_choice], 1
-                            )
-                        # update the choice we're looking for
-                        current_choice += 1
-                        break
+                # the first run should contain the choice
+                choice_run = para.runs[0]
+                run_match = choices_re.match(choice_run.text)
+                if run_match:
+                    # if we matched the wrong choice, replace it with
+                    # the right choice
+                    if run_match.group(1) != choices[current_choice]:
+                        choice_run.text = choice_run.text.replace(
+                            run_match.group(1), choices[current_choice], 1
+                        )
+                    # update the choice we're looking for
+                    current_choice += 1
                 else:
                     # same problem as above, it is possible that the start of
                     # a choice is spread out over multiple runs.
                     # TODO: fix this problem.
-                    for paragraph in cell.paragraphs:
-                        for run in paragraph.runs:
-                            run.font.highlight_color = WD_COLOR_INDEX.RED
+                    highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+                    return cell
 
                 # if we just found Z), we're done looking for choices
                 if current_choice == 4:
-                    print("Found all choices")
                     current_choice = 0
-                    # this is not really the stem idx, but it makes putting a space
-                    # before the answer line easier
-                    stem_idx = [x.text for x in cell.paragraphs].index(para.text)
-                    break
+                    state = QuestionFormatterState.ANSWER
 
-            else:
-                continue
+        elif state is QuestionFormatterState.ANSWER:
 
-        # if we failed to find 4 choices before hitting the end
-        # of the cell, highlight the cell to indicate a problem
-        else:
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    run.font.highlight_color = WD_COLOR_INDEX.RED
+            # if we find a choice line while looking for an answer,
+            # the question is probably not Short Answer. highlight
+            # the question type to indicate this
+            wrong_choice_match = choices_re.match(para.text)
+            if wrong_choice_match:
+                q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+                return cell
 
-    # finally, we need to find the answer
-    if q_type is not None:
-
-        answer_re = _compile(r"\s*(ANSWER:)\s*")
-
-        for idx, para in enumerate(cell.paragraphs[stem_idx:]):
             answer_match = answer_re.match(para.text)
-
             if answer_match:
-
-                # delete paragraphs between end of stem and start of first
-                # choice, then insert a blank paragraph. only do this if
-                # we are looking for W), the first choice
-                for to_delete in cell.paragraphs[stem_idx:idx]:
-                    delete_paragraph(to_delete)
                 para.insert_paragraph_before("")
 
                 # set the font to all-caps for every run in the answer line
@@ -367,64 +440,104 @@ def process_question_cell(cell: _Cell):
                 # letter, paste in the rest of the answer. probably requires copying
                 # the paragraph that contains the right answer.
 
-                # index the end of the question
-                question_end_idx = [x.text for x in cell.paragraphs].index(para.text)
+                # if we made it here, the cell passed all checks - therefore
+                # it should not be highlighted red. instead, highlight it None
+                highlight_cell_text(cell, None)
+                return cell
 
-                break
-
-        # highlight cell red if we can't find the answer line
-        else:
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    run.font.highlight_color = WD_COLOR_INDEX.RED
-
-        # delete any extra whitespace after the end of the question
-        if answer_match:
-            for para in cell.paragraphs[question_end_idx:]:
-                if para.text.strip() == "":
-                    delete_paragraph(para)
+    else:
+        # if we get through the entire cell without finding all parts of
+        # of the question, highlight the cell red
+        highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+        return cell
 
 
-def process_row(nsb_table_row):
+def highlight_cell_text(cell: _Cell, color: WD_COLOR_INDEX):
+    """Highlights all the text in a cell a given color. Used for
+    providing linter warnings.
 
-    cells_list = nsb_table_row.cells
+    Parameters
+    ----------
+    cell : _Cell
+    color : WD_COLOR_INDEX
+    """
+    for paragraph in cell.paragraphs:
+        for run in paragraph.runs:
+            run.font.highlight_color = color
 
-    # make sure first cell says TOSS-UP, BONUS, or VISUAL BONUS and nothing else
-    # writers can put TU, B, or VB as shorthand and this will expand it
 
+def format_tub_cell(cell: _Cell) -> _Cell:
+    """Formats the TOSS-UP/BONUS cell. Expands shorthand (TU/B/VB) as well.
+
+    Parameters
+    ----------
+    cell : _Cell
+
+    Returns
+    -------
+    _Cell
+    """
     tub_possible = _compile(r"\s*(TOSS-UP|BONUS|VISUAL BONUS|TU|B|VB)")
-    tub_cell = cells_list[0]
 
-    tub_match = tub_possible.match(tub_cell.text)
+    tub_match = tub_possible.match(cell.text)
 
     if tub_match:
         put = TossUpBonus.from_string(tub_match.group(1)).value
-        clear_cell(tub_cell)
-        tub_cell.paragraphs[0].add_run(put)
+        clear_cell(cell)
+        cell.paragraphs[0].add_run(put)
+        highlight_cell_text(cell, None)
 
+    # if a match can't be found, highlight the cell red
     else:
-        for paragraph in tub_cell.paragraphs:
-            for run in paragraph.runs:
-                run.font.highlight_color = WD_COLOR_INDEX.RED
+        highlight_cell_text(cell, WD_COLOR_INDEX.RED)
 
-    # make sure the second cell says one of our subjects and nothing else
-    # shorthand is, once again, allowed
+    return cell
 
+
+def format_subject_cell(cell: _Cell) -> _Cell:
+    """Formats the Subject cell. Expands shorthand as well.
+
+    Parameters
+    ----------
+    cell : _Cell
+
+    Returns
+    -------
+    _Cell
+    """
     subject_possible = _compile(
         r"\s*(BIOLOGY|B|CHEMISTRY|C|EARTH AND SPACE|ES|ENERGY|EN|MATH|M|PHYSICS|P)"
     )
-    subject_cell = cells_list[1]
-
-    subject_match = subject_possible.match(subject_cell.text)
+    subject_match = subject_possible.match(cell.text)
 
     if subject_match:
         put = Subject.from_string(subject_match.group(1)).value
-        clear_cell(subject_cell)
-        subject_cell.paragraphs[0].add_run(put)
+        clear_cell(cell)
+        cell.paragraphs[0].add_run(put)
+        highlight_cell_text(cell, None)
+    # if a match can't be found, highlight the cell red
     else:
-        for paragraph in subject_cell.paragraphs:
-            for run in paragraph.runs:
-                run.font.highlight_color = WD_COLOR_INDEX.RED
+        highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+    return cell
+
+
+def process_row(nsb_table_row: _Row) -> _Row:
+
+    cells_list = nsb_table_row.cells
+    tub_cell = cells_list[0]
+    subject_cell = cells_list[1]
+    ques_cell = cells_list[2]
+
+    # make sure first cell says TOSS-UP, BONUS, or VISUAL BONUS and nothing else
+    format_tub_cell(tub_cell)
+
+    # make sure the second cell says one of our subjects and nothing else
+    format_subject_cell(subject_cell)
+
+    # make sure the third cell has a well-formed question
+    format_question_cell(ques_cell)
+
+    return nsb_table_row
 
 
 def format_table(table_doc):
