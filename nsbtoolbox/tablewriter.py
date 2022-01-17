@@ -37,72 +37,6 @@ class QuestionFormatterState(Enum):
     ANSWER = 2
 
 
-def insert_run_at_position(par, pos, txt=""):
-    """Insert a new run with text {txt} into paragraph {par}
-    at given position {pos}.
-    Returns the newly created run.
-    """
-    p = par._p
-    new_run = par.add_run(txt)
-    p.insert(pos + 1, new_run._r)
-
-    return new_run
-
-
-def insert_run_before(par, run, txt=""):
-    """Insert a new run with text {txt} into paragraph before given {run}.
-    Returns the newly created run.
-    """
-    run_2 = par.add_run(txt)
-    run._r.addprevious(run_2._r)
-
-    return run_2
-
-
-def insert_run_after(par, run, txt=""):
-    """Insert a new run with text {txt} into paragraph after given {run}.
-    Returns the newly created run.
-    """
-    run_2 = par.add_run(txt)
-    run._r.addnext(run_2._r)
-
-    return run_2
-
-
-def copy_run_format(run_src, run_dst):
-    """Copy formatting from {run_src} to {run_dst}."""
-    rPr_target = run_dst._r.get_or_add_rPr()
-    rPr_target.addnext(deepcopy(run_src._r.get_or_add_rPr()))
-    run_dst._r.remove(rPr_target)
-
-
-def compare_run_styles(run_1: Run, run_2: Run) -> bool:
-    """Nonexhaustively compares two runs to check if they have
-    the same font. Science Bowl only uses italic, bold, all caps,
-    superscript, subscript, and underline, so only those are
-    compared.
-
-    Parameters
-    ----------
-    run_1, run_2 : Run
-
-    Returns
-    -------
-    bool
-    """
-    font_1 = run_1.font
-    font_2 = run_2.font
-
-    return (
-        (font_1.italic == font_2.italic)
-        and (font_1.bold == font_2.bold)
-        and (font_1.all_caps == font_2.all_caps)
-        and (font_1.superscript == font_2.superscript)
-        and (font_1.subscript == font_2.subscript)
-        and (font_1.underline == font_1.underline)
-    )
-
-
 def preprocess_cell(cell: _Cell) -> _Cell:
     """Multipass cleaning function for table cells.
 
@@ -150,6 +84,33 @@ def preprocess_cell(cell: _Cell) -> _Cell:
     return cell
 
 
+def compare_run_styles(run_1: Run, run_2: Run) -> bool:
+    """Nonexhaustively compares two runs to check if they have
+    the same font. Science Bowl only uses italic, bold, all caps,
+    superscript, subscript, and underline, so only those are
+    compared.
+
+    Parameters
+    ----------
+    run_1, run_2 : Run
+
+    Returns
+    -------
+    bool
+    """
+    font_1 = run_1.font
+    font_2 = run_2.font
+
+    return (
+        (font_1.italic == font_2.italic)
+        and (font_1.bold == font_2.bold)
+        and (font_1.all_caps == font_2.all_caps)
+        and (font_1.superscript == font_2.superscript)
+        and (font_1.subscript == font_2.subscript)
+        and (font_1.underline == font_1.underline)
+    )
+
+
 def split_run_at(par: Paragraph, run: Run, split_at: int):
     """Splits a run at a specified index.
 
@@ -172,12 +133,19 @@ def split_run_at(par: Paragraph, run: Run, split_at: int):
     split_at %= len(txt)
 
     left, right = [txt[:split_at], txt[split_at:]]
-    run.text = left
-    new_runs = [run]
-    new_runs.append(insert_run_after(par, new_runs[0], right))
-    copy_run_format(run, new_runs[-1])
 
-    return new_runs
+    run.text = left
+    # create second run
+    run_2 = par.add_run(right)
+    # move second run to be after first run
+    run._r.addnext(run_2._r)
+
+    # copy first run formatting to run two
+    run_2_rPr = run_2._r.get_or_add_rPr()
+    run_2_rPr.addnext(deepcopy(run._r.get_or_add_rPr()))
+    run_2._r.remove(run_2_rPr)
+
+    return [run, run_2]
 
 
 def shade_columns(column, shade: str):
@@ -450,14 +418,17 @@ def format_tub_cell(cell: _Cell) -> _Cell:
     -------
     _Cell
     """
-    tub_possible = _compile(r"\s*(TOSS-UP|BONUS|VISUAL BONUS|TU|B|VB)")
+    tub_possible = _compile(r"\s*(TOSS-UP|BONUS|VISUAL BONUS|TU|B|VB)\b")
 
     tub_match = tub_possible.match(cell.text)
 
     if tub_match:
         put = TossUpBonus.from_string(tub_match.group(1)).value
         clear_cell(cell)
-        cell.paragraphs[0].add_run(put)
+        tub_run = cell.paragraphs[0].runs[0]
+        tub_run.text = put
+        tub_run.italic = None
+        tub_run.bold = None
         highlight_cell_text(cell, None)
 
     # if a match can't be found, highlight the cell red
@@ -479,14 +450,17 @@ def format_subject_cell(cell: _Cell) -> _Cell:
     _Cell
     """
     subject_possible = _compile(
-        r"\s*(BIOLOGY|B|CHEMISTRY|C|EARTH AND SPACE|ES|ENERGY|EN|MATH|M|PHYSICS|P)"
+        r"\s*(BIOLOGY|B|CHEMISTRY|C|EARTH AND SPACE|ES|ENERGY|EN|MATH|M|PHYSICS|P)\b"
     )
     subject_match = subject_possible.match(cell.text)
 
     if subject_match:
         put = Subject.from_string(subject_match.group(1)).value
         clear_cell(cell)
-        cell.paragraphs[0].add_run(put)
+        subj_run = cell.paragraphs[0].runs[0]
+        subj_run.text = put
+        subj_run.italic = None
+        subj_run.bold = None
         highlight_cell_text(cell, None)
     # if a match can't be found, highlight the cell red
     else:
