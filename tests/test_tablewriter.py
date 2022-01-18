@@ -201,3 +201,93 @@ class TestFormatSubject(unittest.TestCase):
             after_text = cell.text
             self.assertEqual(prior_text, after_text)
             self.assertEqual(test_run.font.highlight_color, WD_COLOR_INDEX.RED)
+
+
+class TestQuestionFormatter(unittest.TestCase):
+    test_data = Document(data_dir / "test_question_parser.docx")
+
+    def _extract_cell_text(self, cell):
+        ret = []
+        for para in cell.paragraphs:
+            if para.runs == []:
+                ret.append("")
+            else:
+                for run in para.runs:
+                    ret.append(run.text)
+
+        return ret
+
+    def test_short_answer(self):
+        """This makes sure that recognizable Short Answer questions
+        are properly formatted."""
+        expected = [
+            "Short Answer",
+            "    This is a well-formatted question.",
+            "",
+            "ANSWER: IT SHOULD BE UNCHANGED",
+        ]
+
+        cells = self.test_data.tables[0].rows[0].cells
+
+        for cell in cells:
+            q_parser = tablewriter.QuestionCellFormatter(
+                tablewriter.preprocess_cell(cell)
+            )
+            test_text = self._extract_cell_text(q_parser.parse())
+            self.assertEqual(test_text, expected)
+            self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
+
+    def test_multiple_choice(self):
+        """This makes sure that recognizable Multiple Choice questions
+        are properly formatted."""
+        expected = [
+            "Multiple Choice",
+            "    This is a well-formatted question.",
+            "",
+            "W) This is the W) choice",
+            "X) This is the X) choice",
+            "Y) This is the Y) choice",
+            "Z) This is the Z) choice",
+            "",
+            "ANSWER: W) THIS IS THE W) CHOICE",
+        ]
+
+        cells = self.test_data.tables[0].rows[1].cells
+
+        for cell in cells:
+            q_parser = tablewriter.QuestionCellFormatter(
+                tablewriter.preprocess_cell(cell)
+            )
+            test_text = self._extract_cell_text(q_parser.parse())
+            self.assertEqual(test_text, expected)
+            self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
+
+    def test_question_type_warning(self):
+        """Tests that mislabeled question types get warnings."""
+        cells = self.test_data.tables[0].rows[2].cells
+
+        for cell in cells:
+            q_parser = tablewriter.QuestionCellFormatter(
+                tablewriter.preprocess_cell(cell)
+            )
+            test_cell = q_parser.parse()
+            self.assertEqual(
+                test_cell.paragraphs[0].runs[0].font.highlight_color,
+                WD_COLOR_INDEX.YELLOW,
+            )
+            self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
+
+    def test_answer_line_warning(self):
+        """Tests that answer lines that don't match choices in
+        MC questions get warnings."""
+        cells = self.test_data.tables[0].rows[3].cells
+
+        for cell in cells:
+            q_parser = tablewriter.QuestionCellFormatter(
+                tablewriter.preprocess_cell(cell)
+            )
+            test_cell = q_parser.parse()
+            self.assertEqual(
+                test_cell.paragraphs[-1].runs[0].font.highlight_color,
+                WD_COLOR_INDEX.YELLOW,
+            )
