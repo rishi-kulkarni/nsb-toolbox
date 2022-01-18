@@ -77,10 +77,7 @@ def preprocess_cell(cell: _Cell) -> _Cell:
 
             # this pass combines runs that have the same font properties
             # editing an XML file splits a run, so this is necessary
-            for run_1, run_2 in zip(para.runs[:-1], para.runs[1:]):
-                if compare_run_styles(run_1, run_2):
-                    run_2.text = run_1.text + run_2.text
-                    delete_run(run_1)
+            fuse_consecutive_runs(para)
 
             # finally, delete any left padding or right padding for cells
             # containing text delete paragraphs that are empty
@@ -91,6 +88,26 @@ def preprocess_cell(cell: _Cell) -> _Cell:
                 para.runs[-1].text = para.runs[-1].text.rstrip()
 
     return cell
+
+
+def fuse_consecutive_runs(para: Paragraph) -> Paragraph:
+    """Compares every run in a paragraph with the next. If they
+    have the same formatting, they are combined into a single
+    run.
+
+    Parameters
+    ----------
+    para : Paragraph
+
+    Returns
+    -------
+    Paragraph
+    """
+    for run_1, run_2 in zip(para.runs[:-1], para.runs[1:]):
+        if compare_run_styles(run_1, run_2):
+            run_2.text = run_1.text + run_2.text
+            delete_run(run_1)
+    return para
 
 
 def compare_run_styles(run_1: Run, run_2: Run) -> bool:
@@ -150,11 +167,21 @@ def split_run_at(par: Paragraph, run: Run, split_at: int):
     run._r.addnext(run_2._r)
 
     # copy first run formatting to run two
-    run_2_rPr = run_2._r.get_or_add_rPr()
-    run_2_rPr.addnext(deepcopy(run._r.get_or_add_rPr()))
-    run_2._r.remove(run_2_rPr)
+    copy_run_formatting(run, run_2)
 
     return [run, run_2]
+
+
+def copy_run_formatting(run_from: Run, run_to: Run):
+    """Copies formatting from one run to another.
+
+    Parameters
+    ----------
+    run_from, run_to : Run
+    """
+    run_to_rPr = run_to._r.get_or_add_rPr()
+    run_to_rPr.addnext(deepcopy(run_from._r.get_or_add_rPr()))
+    run_to._r.remove(run_to_rPr)
 
 
 def shade_columns(column, shade: str):
@@ -187,18 +214,27 @@ def make_jans_shadings(table):
     shade_columns(table.columns[7], "#daeef3")
 
 
-def delete_paragraph(paragraph):
+def delete_paragraph(paragraph: Paragraph):
+    """Deletes a paragraph."""
     p = paragraph._element
     p.getparent().remove(p)
     p._p = p._element = None
 
 
-def delete_run(run):
+def delete_run(run: Run):
+    """Deletes a run."""
     p = run._r.getparent()
     p.remove(run._r)
 
 
-def clear_cell(cell):
+def clear_cell(cell: _Cell):
+    """Deletes every paragraph in a cell except for the first, and makes the first
+    paragraph contain only an empty run of text.
+
+    Parameters
+    ----------
+    cell : _Cell
+    """
     if len(cell.paragraphs) > 1:
         for paragraph in cell.paragraphs[1:]:
             delete_paragraph(paragraph)
@@ -271,9 +307,10 @@ def _compile(regex: str):
 
 
 class QuestionCellFormatter:
+    """Formats a cell containing a Science Bowl Question."""
 
     _q_type_possible = _compile(r"\s*(Short Answer|SA|Multiple Choice|MC)\s*")
-    _choices_re = _compile(r"\s*(W\)|X\)|Y\)|Z\))\s*")
+    _choices_re = _compile(r"\s*([W|X|Y|Z]\))\s*")
     _answer_re = _compile(r"\s*(ANSWER:)\s*")
 
     _choices = ("W)", "X)", "Y)", "Z)")
@@ -284,6 +321,7 @@ class QuestionCellFormatter:
         self.q_type = None
         self.q_type_run = None
         self.current_choice = 0
+        self.choices_para = {}
         self.found_all = False
 
     def _start_handler(self, para: Paragraph):
@@ -344,7 +382,8 @@ class QuestionCellFormatter:
                     choice_run.text = choice_run.text.replace(
                         run_match.group(1), self._choices[self.current_choice], 1
                     )
-                # update the choice we're looking for
+                # save text and update the choice we're looking for
+                self.choices_para[self.current_choice] = para
                 self.current_choice += 1
             else:
                 # same problem as above, it is possible that someone
@@ -368,17 +407,49 @@ class QuestionCellFormatter:
 
             # set the font to all-caps for every run in the answer line
             for run in para.runs:
-                run.font.all_caps = True
+                run.text = run.text.upper()
 
-            # TODO: if the question is multiple choice and the answer is only a
-            # letter, paste in the rest of the answer. probably requires copying
-            # the paragraph that contains the right answer.
+            # for MC questions, additional checks to make sure
+            # answer line matches choice
+            if self.q_type is QuestionType.MULTIPLE_CHOICE:
+                answer_text = para.text.replace("ANSWER: ", "", 1)
+
+                test_choice_re = _compile(r"\s*([W|X|Y|Z]\)?)\s*")
+                test_choice_match = test_choice_re.match(answer_text)
+                if test_choice_match:
+                    # if answer line is a single letter, copy the text of
+                    # the choice over to the answer line
+                    if test_choice_match.span()[1] == len(answer_text):
+                        test_choice = test_choice_match.group(1)
+                        if not test_choice.endswith(")"):
+                            test_choice += ")"
+                        correct_para = self.choices_para[
+                            self._choices.index(test_choice)
+                        ]
+                        para.text = "ANSWER: "
+                        for run in correct_para.runs:
+                            new_run = para.add_run(run.text.upper())
+                            copy_run_formatting(run, new_run)
+                        fuse_consecutive_runs(para)
+                    # otherwise, check that the answer line text matches the choice.
+                    # if it doesn't raise a linting error.
+                    else:
+                        choice_num = self._choices.index(test_choice_match.group(1))
+                        if self.choices_para[choice_num].text.upper() != answer_text:
+                            highlight_paragraph_text(para, WD_COLOR_INDEX.YELLOW)
 
             # if we made it here, we found everything.
             self.found_all = True
 
     def parse(self):
+        """Parser function. Takes a preprocessed question cell
+        and returns a cell containing a properly-formatted
+        Science Bowl question.
 
+        Returns
+        -------
+        _Cell
+        """
         for para in self.cell.paragraphs:
 
             if self.state is QuestionFormatterState.Q_START:
@@ -391,12 +462,14 @@ class QuestionCellFormatter:
                 if choice_match:
                     if self.q_type is QuestionType.SHORT_ANSWER:
                         self.q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+                        self.q_type = QuestionType.MULTIPLE_CHOICE
                     self.state = QuestionFormatterState.CHOICES
                     self._choice_handler(para)
 
                 elif answer_match:
                     if self.q_type is QuestionType.MULTIPLE_CHOICE:
                         self.q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+                        self.q_type = QuestionType.SHORT_ANSWER
                     self.state = QuestionFormatterState.ANSWER
                     self._answer_handler(para)
 
@@ -426,8 +499,19 @@ def highlight_cell_text(cell: _Cell, color: WD_COLOR_INDEX):
     color : WD_COLOR_INDEX
     """
     for paragraph in cell.paragraphs:
-        for run in paragraph.runs:
-            run.font.highlight_color = color
+        highlight_paragraph_text(paragraph, color)
+
+
+def highlight_paragraph_text(para: Paragraph, color: WD_COLOR_INDEX):
+    """Highlights every run in a paragraph a given color.
+
+    Parameters
+    ----------
+    para : Paragraph
+    color : WD_COLOR_INDEX
+    """
+    for run in para.runs:
+        run.font.highlight_color = color
 
 
 def format_tub_cell(cell: _Cell) -> _Cell:
@@ -491,8 +575,19 @@ def format_subject_cell(cell: _Cell) -> _Cell:
     return cell
 
 
-def process_row(nsb_table_row: _Row) -> _Row:
+def format_row(nsb_table_row: _Row) -> _Row:
+    """Formats the first three cells (TOSS-UP/BONUS,
+    SUBJECT, and QUESTION) of a row from one of Jan's tables.
 
+    Parameters
+    ----------
+    nsb_table_row : _Row
+        A row from one of Jan's question tables.
+
+    Returns
+    -------
+    _Row
+    """
     cells_list = nsb_table_row.cells
     tub_cell = preprocess_cell(cells_list[0])
     subject_cell = preprocess_cell(cells_list[1])
@@ -514,7 +609,13 @@ def process_row(nsb_table_row: _Row) -> _Row:
     return nsb_table_row
 
 
-def format_table(table_doc):
+def format_table(table_doc: Document):
+    """Formats a Word document containing a Science Bowl question table.
+
+    Parameters
+    ----------
+    table_doc : Document
+    """
     # first row is the header row, so we skip it
     for row in table_doc.tables[0].rows[1:]:
-        process_row(row)
+        format_row(row)
