@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Generator
-from .sciencebowlquestion import ScienceBowlQuestion
+from .classes import ScienceBowlQuestion
 import string
 
 TUB = ("TOSS-UP", "BONUS", "VISUAL BONUS")
