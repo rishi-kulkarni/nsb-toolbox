@@ -112,6 +112,17 @@ class TestPreprocessCell(unittest.TestCase):
 
         self.assertEqual(expected, test)
 
+    def test_cell_7(self):
+        """This cell contains only whitespace."""
+        cell = self.test_data.tables[0].rows[6].cells[0]
+
+        expected = [[""]]
+        test = []
+        for para in tablewriter.preprocess_cell(cell).paragraphs:
+            test.append([run.text for run in para.runs])
+
+        self.assertEqual(expected, test)
+
     def test_save(self):
         self.test_data.save(self.temp_data)
 
