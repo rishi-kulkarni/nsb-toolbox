@@ -50,36 +50,42 @@ def preprocess_cell(cell: _Cell) -> _Cell:
     """
     for para in cell.paragraphs:
 
-        # this pass coerces the font of any whitespace-only runs to the document style
-        for run in para.runs:
-            # if there are empty runs, delete them
-            if run.text == "":
-                delete_run(run)
-            # if there are weirdly formatted run that is only whitespace, strip
-            # their formatting
-            elif run.text.strip() == "":
-                run.font.italic = (
-                    run.font.bold
-                ) = (
-                    run.font.all_caps
-                ) = (
-                    run.font.subscript
-                ) = run.font.superscript = run.font.underline = None
-
-        # this pass combines runs that have the same font properties
-        # editing an XML file splits a run, so this is necessary
-        for run_1, run_2 in zip(para.runs[:-1], para.runs[1:]):
-            if compare_run_styles(run_1, run_2):
-                run_2.text = run_1.text + run_2.text
-                delete_run(run_1)
-
-        # finally, delete any left padding or right padding for cells containing text
-        # delete paragraphs that are empty
+        # if the paragraph has no text, make it a single empty run and move on
         if para.text.strip() == "":
-            delete_paragraph(para)
+            para.text = ""
+
         else:
-            para.runs[0].text = para.runs[0].text.lstrip()
-            para.runs[-1].text = para.runs[-1].text.rstrip()
+            # this pass coerces the font of any whitespace-only runs to
+            # the document style
+            for run in para.runs:
+                # if there are empty runs, delete them
+                if run.text == "":
+                    delete_run(run)
+                # if there are weirdly formatted run that is only whitespace, strip
+                # their formatting
+                elif run.text.strip() == "":
+                    run.font.italic = (
+                        run.font.bold
+                    ) = (
+                        run.font.all_caps
+                    ) = (
+                        run.font.subscript
+                    ) = run.font.superscript = run.font.underline = None
+
+            # this pass combines runs that have the same font properties
+            # editing an XML file splits a run, so this is necessary
+            for run_1, run_2 in zip(para.runs[:-1], para.runs[1:]):
+                if compare_run_styles(run_1, run_2):
+                    run_2.text = run_1.text + run_2.text
+                    delete_run(run_1)
+
+            # finally, delete any left padding or right padding for cells
+            # containing text delete paragraphs that are empty
+            if para.text.strip() == "":
+                delete_paragraph(para)
+            else:
+                para.runs[0].text = para.runs[0].text.lstrip()
+                para.runs[-1].text = para.runs[-1].text.rstrip()
 
     return cell
 
@@ -476,13 +482,16 @@ def process_row(nsb_table_row: _Row) -> _Row:
     ques_cell = preprocess_cell(cells_list[2])
 
     # make sure first cell says TOSS-UP, BONUS, or VISUAL BONUS and nothing else
-    format_tub_cell(tub_cell)
+    if tub_cell.text.strip() != "":
+        format_tub_cell(tub_cell)
 
     # make sure the second cell says one of our subjects and nothing else
-    format_subject_cell(subject_cell)
+    if subject_cell.text.strip() != "":
+        format_subject_cell(subject_cell)
 
     # make sure the third cell has a well-formed question
-    format_question_cell(ques_cell)
+    if ques_cell.text.strip() != "":
+        format_question_cell(ques_cell)
 
     return nsb_table_row
 
