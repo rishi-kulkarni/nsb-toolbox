@@ -33,8 +33,9 @@ COL_WIDTHS = (
 
 class QuestionFormatterState(Enum):
     Q_START = 0
-    CHOICES = 1
-    ANSWER = 2
+    STEM_END = 1
+    CHOICES = 2
+    ANSWER = 3
 
 
 def preprocess_cell(cell: _Cell) -> _Cell:
@@ -48,13 +49,15 @@ def preprocess_cell(cell: _Cell) -> _Cell:
     -------
     _Cell
     """
-    for para in cell.paragraphs:
+    highlight_cell_text(cell, None)
 
-        # if the paragraph has no text, make it a single empty run and move on
-        if para.text.strip() == "":
-            para.text = ""
+    if cell.text.strip() == "":
+        clear_cell(cell)
 
-        else:
+    else:
+
+        for para in cell.paragraphs:
+
             # this pass coerces the font of any whitespace-only runs to
             # the document style
             for run in para.runs:
@@ -203,6 +206,8 @@ def clear_cell(cell):
     if len(first_para.runs) > 1:
         for run in first_para.runs[1:]:
             delete_run(run)
+    elif len(first_para.runs) == 0:
+        first_para.add_run("")
     first_para.runs[0].text = ""
 
 
@@ -265,138 +270,148 @@ def _compile(regex: str):
     return re.compile(regex, re.IGNORECASE)
 
 
-def format_question_cell(cell: _Cell) -> _Cell:
+class QuestionCellFormatter:
 
-    state = QuestionFormatterState.Q_START
+    _q_type_possible = _compile(r"\s*(Short Answer|SA|Multiple Choice|MC)\s*")
+    _choices_re = _compile(r"\s*(W\)|X\)|Y\)|Z\))\s*")
+    _answer_re = _compile(r"\s*(ANSWER:)\s*")
 
-    q_type = None
+    _choices = ("W)", "X)", "Y)", "Z)")
 
-    q_type_possible = _compile(r"\s*(Short Answer|SA|Multiple Choice|MC)\s*")
-    choices_re = _compile(r"\s*(W\)|X\)|Y\)|Z\))\s*")
-    answer_re = _compile(r"\s*(ANSWER:)\s*")
+    def __init__(self, cell: _Cell):
+        self.cell = cell
+        self.state = QuestionFormatterState.Q_START
+        self.q_type = None
+        self.q_type_run = None
+        self.current_choice = 0
+        self.found_all = False
 
-    choices = ("W)", "X)", "Y)", "Z)")
-    current_choice = 0
+    def _start_handler(self, para: Paragraph):
+        q_type_match = self._q_type_possible.match(para.text)
+        if q_type_match:
+            # the first run of the paragraph should contain the question start
+            q_type_run = para.runs[0]
+            run_match = self._q_type_possible.match(q_type_run.text)
 
-    for para in cell.paragraphs:
+            if run_match:
+                self.q_type = QuestionType.from_string(run_match.group(1))
+                run_length = len(q_type_run.text)
+                # if the run contains more than the question type, split
+                # the run into two
+                if run_match.span()[1] < run_length:
+                    q_type_run, _ = split_run_at(para, q_type_run, run_match.span()[1])
 
-        if state is QuestionFormatterState.Q_START:
+                q_type_run.text = self.q_type.value
+                q_type_run.italic = True
+                self.q_type_run = q_type_run
 
-            # go through the cell line-by-line and perform an
-            # operation based on state
-            q_type_match = q_type_possible.match(para.text)
-            if q_type_match:
-                # the first run of the paragraph should contain the question start
-                q_type_run = para.runs[0]
-                run_match = q_type_possible.match(q_type_run.text)
+            else:
+                # unfortunately, if someone has italicized a single
+                # letter in the question start or something, we
+                # will have a problem. in this case, highlight
+                # the question.
+                highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
+                return None
 
-                if run_match:
-                    q_type = QuestionType.from_string(run_match.group(1))
-                    run_length = len(q_type_run.text)
-                    # if the run contains more than the question type, split
-                    # the run into two
-                    if run_match.span()[1] < run_length:
-                        q_type_run, _ = split_run_at(
-                            para, q_type_run, run_match.span()[1]
-                        )
+            # now, the first part of the stem is the second run
+            # if it's not left-padded with 4 spaces, make sure it is
+            # doing it this way ensures that any other formatting in
+            # the stem is preserved (superscripts, subscripts, etc.)
+            stem_run = para.runs[1]
+            stem_run.text = "".join(["    ", stem_run.text.lstrip()])
 
-                    q_type_run.text = q_type.value
-                    q_type_run.italic = True
+            self.state = QuestionFormatterState.STEM_END
+        else:
+            pass
 
-                else:
-                    # unfortunately, if someone has italicized a single
-                    # letter in the question start or something, we
-                    # will have a problem. in this case, highlight
-                    # the question.
-                    highlight_cell_text(cell, WD_COLOR_INDEX.RED)
-                    return cell
+    def _choice_handler(self, para: Paragraph):
 
-                # now, the first part of the stem is the second run
-                # if it's not left-padded with 4 spaces, make sure it is
-                # doing it this way ensures that any other formatting in
-                # the stem is preserved (superscripts, subscripts, etc.)
-                stem_run = para.runs[1]
-                if not stem_run.text.startswith("    "):
-                    stem_run.text = "".join(["    ", stem_run.text.lstrip()])
+        choice_match = self._choices_re.match(para.text)
 
-                if q_type is QuestionType.MULTIPLE_CHOICE:
-                    state = QuestionFormatterState.CHOICES
-                else:
-                    state = QuestionFormatterState.ANSWER
-
-        elif state is QuestionFormatterState.CHOICES:
-
-            choice_match = choices_re.match(para.text)
-            wrong_answer_match = answer_re.match(para.text)
-
-            # if we match an answer line while looking for choices, maybe
-            # the question wasn't actually multiple choice. highlight the
-            # question type to indicate this
-            if wrong_answer_match:
-                q_type_run.font.highlight_color = WD_COLOR_INDEX.RED
-                return cell
-
-            if choice_match:
-                # insert a blank paragraph before this one. only
-                # do this if we are looking for W), the first choice
-                if current_choice == 0:
-                    para.insert_paragraph_before("")
-
-                # the first run should contain the choice
-                choice_run = para.runs[0]
-                run_match = choices_re.match(choice_run.text)
-                if run_match:
-                    # if we matched the wrong choice, replace it with
-                    # the right choice
-                    if run_match.group(1) != choices[current_choice]:
-                        choice_run.text = choice_run.text.replace(
-                            run_match.group(1), choices[current_choice], 1
-                        )
-                    # update the choice we're looking for
-                    current_choice += 1
-                else:
-                    # same problem as above, it is possible that someone
-                    # italicized half of the choice start.
-                    highlight_cell_text(cell, WD_COLOR_INDEX.RED)
-                    return cell
-
-                # if we just found Z), we're done looking for choices
-                if current_choice == 4:
-                    current_choice = 0
-                    state = QuestionFormatterState.ANSWER
-
-        elif state is QuestionFormatterState.ANSWER:
-
-            # if we find a choice line while looking for an answer,
-            # the question is probably not Short Answer. highlight
-            # the question type to indicate this
-            wrong_choice_match = choices_re.match(para.text)
-            if wrong_choice_match:
-                q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
-                return cell
-
-            answer_match = answer_re.match(para.text)
-            if answer_match:
+        if choice_match:
+            # insert a blank paragraph before this one. only
+            # do this if we are looking for W), the first choice
+            if self.current_choice == 0:
                 para.insert_paragraph_before("")
 
-                # set the font to all-caps for every run in the answer line
-                for run in para.runs:
-                    run.font.all_caps = True
+            # the first run should contain the choice
+            choice_run = para.runs[0]
+            run_match = self._choices_re.match(choice_run.text)
+            if run_match:
+                # if we matched the wrong choice, replace it with
+                # the right choice
+                if run_match.group(1) != self._choices[self.current_choice]:
+                    choice_run.text = choice_run.text.replace(
+                        run_match.group(1), self._choices[self.current_choice], 1
+                    )
+                # update the choice we're looking for
+                self.current_choice += 1
+            else:
+                # same problem as above, it is possible that someone
+                # italicized half of the choice start.
+                highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
+                return None
 
-                # TODO: if the question is multiple choice and the answer is only a
-                # letter, paste in the rest of the answer. probably requires copying
-                # the paragraph that contains the right answer.
+            # if we just found Z), we're done looking for choices
+            if self.current_choice == 4:
+                self.current_choice = 0
+                self.state = QuestionFormatterState.ANSWER
 
-                # if we made it here, the cell passed all checks - therefore
-                # it should not be highlighted red. instead, highlight it None
-                highlight_cell_text(cell, None)
-                return cell
+    def _answer_handler(self, para: Paragraph):
+        # if we find a choice line while looking for an answer,
+        # the question is probably not Short Answer. highlight
+        # the question type to indicate this
 
-    else:
-        # if we get through the entire cell without finding all parts of
-        # of the question, highlight the cell red
-        highlight_cell_text(cell, WD_COLOR_INDEX.RED)
-        return cell
+        answer_match = self._answer_re.match(para.text)
+        if answer_match:
+            para.insert_paragraph_before("")
+
+            # set the font to all-caps for every run in the answer line
+            for run in para.runs:
+                run.font.all_caps = True
+
+            # TODO: if the question is multiple choice and the answer is only a
+            # letter, paste in the rest of the answer. probably requires copying
+            # the paragraph that contains the right answer.
+
+            # if we made it here, we found everything.
+            self.found_all = True
+
+    def parse(self):
+
+        for para in self.cell.paragraphs:
+
+            if self.state is QuestionFormatterState.Q_START:
+                self._start_handler(para)
+
+            elif self.state is QuestionFormatterState.STEM_END:
+                choice_match = self._choices_re.match(para.text)
+                answer_match = self._answer_re.match(para.text)
+
+                if choice_match:
+                    if self.q_type is QuestionType.SHORT_ANSWER:
+                        self.q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+                    self.state = QuestionFormatterState.CHOICES
+                    self._choice_handler(para)
+
+                elif answer_match:
+                    if self.q_type is QuestionType.MULTIPLE_CHOICE:
+                        self.q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+                    self.state = QuestionFormatterState.ANSWER
+                    self._answer_handler(para)
+
+            elif self.state is QuestionFormatterState.CHOICES:
+
+                self._choice_handler(para)
+
+            elif self.state is QuestionFormatterState.ANSWER:
+
+                self._answer_handler(para)
+
+        if not self.found_all:
+            # if we get through the entire cell without finding all parts of
+            # of the question, highlight the cell red
+            highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
 
 
 def highlight_cell_text(cell: _Cell, color: WD_COLOR_INDEX):
@@ -491,7 +506,8 @@ def process_row(nsb_table_row: _Row) -> _Row:
 
     # make sure the third cell has a well-formed question
     if ques_cell.text.strip() != "":
-        format_question_cell(ques_cell)
+        question_formatter = QuestionCellFormatter(ques_cell)
+        question_formatter.parse()
 
     return nsb_table_row
 
