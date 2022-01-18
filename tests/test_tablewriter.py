@@ -4,7 +4,7 @@ from pathlib import Path
 from docx import Document
 from docx.enum.text import WD_COLOR_INDEX
 from docx.shared import Pt
-from nsbtoolbox import tablewriter
+from nsbtoolbox import tables
 
 data_dir = Path(__file__).parent / "test_data"
 
@@ -22,13 +22,13 @@ class TestInitializeTable(unittest.TestCase):
 
         for idx, cell in enumerate(table.rows[0].cells):
             self.assertAlmostEqual(
-                cell.width.inches, tablewriter.COL_WIDTHS[idx], places=2
+                cell.width.inches, tables.COL_WIDTHS[idx], places=2
             )
 
     def test_intialize_table(self):
         _nrows = (0, 90, 150, 180)
         for nrow in _nrows:
-            document = tablewriter.initialize_table(nrow)
+            document = tables.initialize_table(nrow)
             self._check_table_characteristics(document, nrow)
 
 
@@ -43,7 +43,7 @@ class TestPreprocessCell(unittest.TestCase):
 
         expected = [["This is a single run of text that is uninterrupted."]]
         test = []
-        for para in tablewriter.preprocess_cell(cell).paragraphs:
+        for para in tables.preprocess_cell(cell).paragraphs:
             test.append([run.text for run in para.runs])
 
         self.assertEqual(expected, test)
@@ -55,7 +55,7 @@ class TestPreprocessCell(unittest.TestCase):
 
         expected = [["This is a single run of text that has been interrupted."]]
         test = []
-        for para in tablewriter.preprocess_cell(cell).paragraphs:
+        for para in tables.preprocess_cell(cell).paragraphs:
             test.append([run.text for run in para.runs])
 
         self.assertEqual(expected, test)
@@ -72,7 +72,7 @@ class TestPreprocessCell(unittest.TestCase):
             ]
         ]
         test = []
-        for para in tablewriter.preprocess_cell(cell).paragraphs:
+        for para in tables.preprocess_cell(cell).paragraphs:
             test.append([run.text for run in para.runs])
 
         self.assertEqual(expected, test)
@@ -84,7 +84,7 @@ class TestPreprocessCell(unittest.TestCase):
 
         expected = [["This is a single run of test that has an italicized space."]]
         test = []
-        for para in tablewriter.preprocess_cell(cell).paragraphs:
+        for para in tables.preprocess_cell(cell).paragraphs:
             test.append([run.text for run in para.runs])
 
         self.assertEqual(expected, test)
@@ -96,7 +96,7 @@ class TestPreprocessCell(unittest.TestCase):
 
         expected = [["C", "6", "H", "15", "O", "6"]]
         test = []
-        for para in tablewriter.preprocess_cell(cell).paragraphs:
+        for para in tables.preprocess_cell(cell).paragraphs:
             test.append([run.text for run in para.runs])
 
         self.assertEqual(expected, test)
@@ -107,7 +107,7 @@ class TestPreprocessCell(unittest.TestCase):
 
         expected = [["This paragraph contains whitespace."]]
         test = []
-        for para in tablewriter.preprocess_cell(cell).paragraphs:
+        for para in tables.preprocess_cell(cell).paragraphs:
             test.append([run.text for run in para.runs])
 
         self.assertEqual(expected, test)
@@ -118,7 +118,7 @@ class TestPreprocessCell(unittest.TestCase):
 
         expected = [[""]]
         test = []
-        for para in tablewriter.preprocess_cell(cell).paragraphs:
+        for para in tables.preprocess_cell(cell).paragraphs:
             test.append([run.text for run in para.runs])
 
         self.assertEqual(expected, test)
@@ -133,7 +133,7 @@ class TestFormatTUBCell(unittest.TestCase):
 
     def _check(self, formatted_cell, expected_text):
         self.assertEqual(
-            tablewriter.format_tub_cell(formatted_cell).text, expected_text
+            tables.format_tub_cell(formatted_cell).text, expected_text
         )
 
         self.assertEqual(len(formatted_cell.paragraphs), 1)
@@ -149,13 +149,13 @@ class TestFormatTUBCell(unittest.TestCase):
 
         for row, tub_expected in zip(test_rows, TUB):
             for cell in row.cells:
-                self._check(tablewriter.format_tub_cell(cell), tub_expected)
+                self._check(tables.format_tub_cell(cell), tub_expected)
 
     def test_errors(self):
         error_row = self.test_data.tables[0].rows[3]
         for cell in error_row.cells:
             prior_text = cell.text
-            test_run = tablewriter.format_tub_cell(cell).paragraphs[0].runs[0]
+            test_run = tables.format_tub_cell(cell).paragraphs[0].runs[0]
             after_text = cell.text
             self.assertEqual(prior_text, after_text)
             self.assertEqual(test_run.font.highlight_color, WD_COLOR_INDEX.RED)
@@ -167,7 +167,7 @@ class TestFormatSubject(unittest.TestCase):
 
     def _check(self, formatted_cell, expected_text):
         self.assertEqual(
-            tablewriter.format_tub_cell(formatted_cell).text, expected_text
+            tables.format_tub_cell(formatted_cell).text, expected_text
         )
 
         self.assertEqual(len(formatted_cell.paragraphs), 1)
@@ -191,13 +191,13 @@ class TestFormatSubject(unittest.TestCase):
 
         for row, subject in zip(test_rows, SUBJECTS):
             for cell in row.cells:
-                self._check(tablewriter.format_subject_cell(cell), subject)
+                self._check(tables.format_subject_cell(cell), subject)
 
     def test_errors(self):
         error_row = self.test_data.tables[0].rows[6]
         for cell in error_row.cells:
             prior_text = cell.text
-            test_run = tablewriter.format_tub_cell(cell).paragraphs[0].runs[0]
+            test_run = tables.format_tub_cell(cell).paragraphs[0].runs[0]
             after_text = cell.text
             self.assertEqual(prior_text, after_text)
             self.assertEqual(test_run.font.highlight_color, WD_COLOR_INDEX.RED)
@@ -230,8 +230,8 @@ class TestQuestionFormatter(unittest.TestCase):
         cells = self.test_data.tables[0].rows[0].cells
 
         for cell in cells:
-            q_parser = tablewriter.QuestionCellFormatter(
-                tablewriter.preprocess_cell(cell)
+            q_parser = tables.QuestionCellFormatter(
+                tables.preprocess_cell(cell)
             )
             test_text = self._extract_cell_text(q_parser.parse())
             self.assertEqual(test_text, expected)
@@ -255,8 +255,8 @@ class TestQuestionFormatter(unittest.TestCase):
         cells = self.test_data.tables[0].rows[1].cells
 
         for cell in cells:
-            q_parser = tablewriter.QuestionCellFormatter(
-                tablewriter.preprocess_cell(cell)
+            q_parser = tables.QuestionCellFormatter(
+                tables.preprocess_cell(cell)
             )
             test_text = self._extract_cell_text(q_parser.parse())
             self.assertEqual(test_text, expected)
@@ -267,8 +267,8 @@ class TestQuestionFormatter(unittest.TestCase):
         cells = self.test_data.tables[0].rows[2].cells
 
         for cell in cells:
-            q_parser = tablewriter.QuestionCellFormatter(
-                tablewriter.preprocess_cell(cell)
+            q_parser = tables.QuestionCellFormatter(
+                tables.preprocess_cell(cell)
             )
             test_cell = q_parser.parse()
             self.assertEqual(
@@ -283,8 +283,8 @@ class TestQuestionFormatter(unittest.TestCase):
         cells = self.test_data.tables[0].rows[3].cells
 
         for cell in cells:
-            q_parser = tablewriter.QuestionCellFormatter(
-                tablewriter.preprocess_cell(cell)
+            q_parser = tables.QuestionCellFormatter(
+                tables.preprocess_cell(cell)
             )
             test_cell = q_parser.parse()
             self.assertEqual(
