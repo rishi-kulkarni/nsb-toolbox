@@ -413,6 +413,8 @@ class QuestionCellFormatter:
             # of the question, highlight the cell red
             highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
 
+        return self.cell
+
 
 def highlight_cell_text(cell: _Cell, color: WD_COLOR_INDEX):
     """Highlights all the text in a cell a given color. Used for
