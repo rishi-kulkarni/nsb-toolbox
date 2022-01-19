@@ -145,12 +145,21 @@ class ScienceBowlQuestion:
                 [f"{wxyz[idx]} {v}" for idx, v in enumerate(choices)]
             )
 
-    def __repr__(self):
-        newline = "\n"
-        if self.question_type is QuestionType.SHORT_ANSWER:
-            rep = f"{self.tu_b.value}{newline}{self.q_letter}) {self.subject.value}  —  {self.question_type.value}    {self.stem} {self.join_choices(self.choices)}{newline}{newline}ANSWER: {self.answer}{newline}"
 
+class ErrorLogger:
+    def __init__(self, verbosity):
+        self.verbosity = verbosity
+        self.errors = []
+        self.row_number = None
+
+    def set_row(self, row_number):
+        self.row_number = row_number
+
+    def log_error(self, error_msg: str):
+        self.errors.append(f"Question {self.row_number}: {error_msg}")
+
+    def __repr__(self) -> str:
+        if self.verbosity is True:
+            return "\n".join(self.errors)
         else:
-            rep = f"{self.tu_b.value}{newline}{self.q_letter}) {self.subject.value}  —  {self.question_type.value}    {self.stem}{newline}{newline}{self.join_choices(self.choices)}{newline}{newline}ANSWER: {self.answer}{newline}"
-
-        return rep
+            return f"Found {len(self.errors)} errors."

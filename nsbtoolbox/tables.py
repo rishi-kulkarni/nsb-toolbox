@@ -9,7 +9,7 @@ from docx.shared import Inches, Pt
 from docx.table import _Cell, _Row
 from docx.text.paragraph import Paragraph
 
-from .classes import QuestionType, Subject, TossUpBonus
+from .classes import QuestionType, Subject, TossUpBonus, ErrorLogger
 from .docx_utils import (
     clear_cell,
     copy_run_formatting,
@@ -126,7 +126,8 @@ class QuestionCellFormatter:
 
     _choices = ("W)", "X)", "Y)", "Z)")
 
-    def __init__(self, cell: _Cell):
+    def __init__(self, cell: _Cell, error_logger: Optional[ErrorLogger] = None):
+        self.error_logger = error_logger
         self.cell = cell
         self.state = QuestionFormatterState.Q_START
         self.q_type = None
@@ -134,6 +135,7 @@ class QuestionCellFormatter:
         self.current_choice = 0
         self.choices_para = {}
         self.found_all = False
+        self.errors = []
 
     def _start_handler(self, para: Paragraph):
         q_type_match = self._q_type_possible.match(para.text)
@@ -160,6 +162,8 @@ class QuestionCellFormatter:
                 # will have a problem. in this case, highlight
                 # the question.
                 highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
+                if self.error_logger is not None:
+                    self.error_logger.log_error("Couldn't parse question.")
                 return None
 
             # now, the first part of the stem is the second run
@@ -200,6 +204,8 @@ class QuestionCellFormatter:
                 # same problem as above, it is possible that someone
                 # italicized half of the choice start.
                 highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
+                if self.error_logger is not None:
+                    self.error_logger.log_error("Couldn't parse question.")
                 return None
 
             # if we just found Z), we're done looking for choices
@@ -248,6 +254,10 @@ class QuestionCellFormatter:
                         choice_num = self._choices.index(test_choice_match.group(1))
                         if self.choices_para[choice_num].text.upper() != answer_text:
                             highlight_paragraph_text(para, WD_COLOR_INDEX.YELLOW)
+                            if self.error_logger is not None:
+                                self.error_logger.log_error(
+                                    "Answer line doesn't match choice."
+                                )
 
             # if we made it here, we found everything.
             self.found_all = True
@@ -273,6 +283,10 @@ class QuestionCellFormatter:
                 if choice_match:
                     if self.q_type is QuestionType.SHORT_ANSWER:
                         self.q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+                        if self.error_logger is not None:
+                            self.error_logger.log_error(
+                                "Question type is SA, but has choices."
+                            )
                         self.q_type = QuestionType.MULTIPLE_CHOICE
                     self.state = QuestionFormatterState.CHOICES
                     self._choice_handler(para)
@@ -280,6 +294,10 @@ class QuestionCellFormatter:
                 elif answer_match:
                     if self.q_type is QuestionType.MULTIPLE_CHOICE:
                         self.q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+                        if self.error_logger is not None:
+                            self.error_logger.log_error(
+                                "Question type is MC, but has no choices."
+                            )
                         self.q_type = QuestionType.SHORT_ANSWER
                     self.state = QuestionFormatterState.ANSWER
                     self._answer_handler(para)
@@ -296,11 +314,13 @@ class QuestionCellFormatter:
             # if we get through the entire cell without finding all parts of
             # of the question, highlight the cell red
             highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
+            if self.error_logger is not None:
+                self.error_logger.log_error("Couldn't parse question.")
 
         return self.cell
 
 
-def format_tub_cell(cell: _Cell) -> _Cell:
+def format_tub_cell(cell: _Cell, error_logger: Optional[ErrorLogger] = None) -> _Cell:
     """Formats the TOSS-UP/BONUS cell. Expands shorthand (TU/B/VB) as well.
 
     Parameters
@@ -327,11 +347,17 @@ def format_tub_cell(cell: _Cell) -> _Cell:
     # if a match can't be found, highlight the cell red
     else:
         highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+        if error_logger is not None:
+            error_logger.log_error(
+                "Question must be a toss-up, bonus, or visual bonus."
+            )
 
     return cell
 
 
-def format_subject_cell(cell: _Cell) -> _Cell:
+def format_subject_cell(
+    cell: _Cell, error_logger: Optional[ErrorLogger] = None
+) -> _Cell:
     """Formats the Subject cell. Expands shorthand as well.
 
     Parameters
@@ -358,10 +384,13 @@ def format_subject_cell(cell: _Cell) -> _Cell:
     # if a match can't be found, highlight the cell red
     else:
         highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+        if error_logger is not None:
+            error_logger.log_error("Invalid subject.")
+
     return cell
 
 
-def format_row(nsb_table_row: _Row) -> _Row:
+def format_row(nsb_table_row: _Row, error_logger: Optional[ErrorLogger] = None) -> _Row:
     """Formats the first three cells (TOSS-UP/BONUS,
     SUBJECT, and QUESTION) of a row from one of Jan's tables.
 
@@ -373,35 +402,48 @@ def format_row(nsb_table_row: _Row) -> _Row:
     Returns
     -------
     _Row
+    List
     """
     cells_list = nsb_table_row.cells
-    tub_cell = preprocess_cell(cells_list[0])
-    subject_cell = preprocess_cell(cells_list[1])
-    ques_cell = preprocess_cell(cells_list[2])
-
+    if error_logger is None:
+        tub_cell = preprocess_cell(cells_list[0])
+        subject_cell = preprocess_cell(cells_list[1])
+        ques_cell = preprocess_cell(cells_list[2])
+    else:
+        tub_cell = preprocess_cell(cells_list[0])
+        subject_cell = preprocess_cell(cells_list[1])
+        ques_cell = preprocess_cell(cells_list[2])
     # make sure first cell says TOSS-UP, BONUS, or VISUAL BONUS and nothing else
     if tub_cell.text.strip() != "":
-        format_tub_cell(tub_cell)
+        format_tub_cell(tub_cell, error_logger)
 
     # make sure the second cell says one of our subjects and nothing else
     if subject_cell.text.strip() != "":
-        format_subject_cell(subject_cell)
+        format_subject_cell(subject_cell, error_logger)
 
     # make sure the third cell has a well-formed question
     if ques_cell.text.strip() != "":
-        question_formatter = QuestionCellFormatter(ques_cell)
+        question_formatter = QuestionCellFormatter(ques_cell, error_logger)
         question_formatter.parse()
 
     return nsb_table_row
 
 
-def format_table(table_doc: Document):
+def format_table(table_doc: Document, verbosity=True):
     """Formats a Word document containing a Science Bowl question table.
 
     Parameters
     ----------
     table_doc : Document
+    verbosity : bool, default True
     """
+    error_logger = ErrorLogger(verbosity)
     # first row is the header row, so we skip it
-    for row in table_doc.tables[0].rows[1:]:
-        format_row(row)
+    for idx, row in enumerate(table_doc.tables[0].rows[1:]):
+        error_logger.set_row(idx)
+        format_row(row, error_logger)
+
+    if len(error_logger.errors) > 0:
+        print(error_logger)
+    else:
+        print("Found no errors 😄")
