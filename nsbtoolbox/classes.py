@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from typing import List
 
 
 class TossUpBonus(Enum):
@@ -109,7 +110,7 @@ class ScienceBowlQuestion:
     subject: Subject
     question_type: QuestionType
     stem: str
-    choices: list[str]
+    choices: List[str]
     answer: str
 
     question_set: str = "N/A"
