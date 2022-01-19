@@ -18,7 +18,7 @@ def format(args):
 
 def main():
     argparser = argparse.ArgumentParser(
-        description="Parser for Science Bowl .docx files."
+        description="Utilities for managing Science Bowl .docx files."
     )
     path_parser = argparse.ArgumentParser(add_help=False)
     path_parser.add_argument(
