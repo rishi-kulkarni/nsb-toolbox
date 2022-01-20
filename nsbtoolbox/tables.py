@@ -1,7 +1,7 @@
 import re
 from enum import Enum
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, Type
 from abc import ABC, abstractclassmethod
 
 from docx import Document
@@ -48,6 +48,8 @@ class QuestionFormatterState(Enum):
 
 
 class CellFormatter(ABC):
+    """Helper class that ensures formatters are standardized."""
+
     @abstractclassmethod
     def __init__(self, cell: _Cell, error_logger: Optional[ErrorLogger] = None):
         pass
@@ -365,7 +367,6 @@ class TuBCellFormatter(CellFormatter):
 
 
 class SubjectCellFormatter(CellFormatter):
-
     subject_possible = _compile(
         r"\s*(BIOLOGY|B|CHEMISTRY|C|EARTH AND SPACE|ES|ENERGY|EN|MATH|M|PHYSICS|P)\b"
     )
@@ -397,9 +398,21 @@ class SubjectCellFormatter(CellFormatter):
 
 def format_column(
     nsb_table_column: _Column,
-    formatter: CellFormatter,
+    formatter: Type[CellFormatter],
     error_logger: Optional[ErrorLogger] = None,
 ) -> _Column:
+    """Utility function that applies a formatter to every cell in a column.
+
+    Parameters
+    ----------
+    nsb_table_column : _Column
+    formatter : CellFormatter instance
+    error_logger : Optional[ErrorLogger], optional
+
+    Returns
+    -------
+    _Column
+    """
     for idx, cell in enumerate(nsb_table_column.cells[1:]):
         preprocess_cell(cell)
         if error_logger is not None:
