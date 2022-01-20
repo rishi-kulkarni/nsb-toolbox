@@ -21,9 +21,7 @@ class TestInitializeTable(unittest.TestCase):
         self.assertEqual(len(table.rows), nrows + 1)
 
         for idx, cell in enumerate(table.rows[0].cells):
-            self.assertAlmostEqual(
-                cell.width.inches, tables.COL_WIDTHS[idx], places=2
-            )
+            self.assertAlmostEqual(cell.width.inches, tables.COL_WIDTHS[idx], places=2)
 
     def test_intialize_table(self):
         _nrows = (0, 90, 150, 180)
@@ -132,9 +130,7 @@ class TestFormatTUBCell(unittest.TestCase):
     test_data = Document(data_dir / "test_TUB.docx")
 
     def _check(self, formatted_cell, expected_text):
-        self.assertEqual(
-            tables.format_tub_cell(formatted_cell).text, expected_text
-        )
+        self.assertEqual(formatted_cell.text, expected_text)
 
         self.assertEqual(len(formatted_cell.paragraphs), 1)
 
@@ -149,13 +145,15 @@ class TestFormatTUBCell(unittest.TestCase):
 
         for row, tub_expected in zip(test_rows, TUB):
             for cell in row.cells:
-                self._check(tables.format_tub_cell(cell), tub_expected)
+                tub_formatter = tables.TuBCellFormatter(cell)
+                self._check(tub_formatter.format(), tub_expected)
 
     def test_errors(self):
         error_row = self.test_data.tables[0].rows[3]
         for cell in error_row.cells:
             prior_text = cell.text
-            test_run = tables.format_tub_cell(cell).paragraphs[0].runs[0]
+            tub_formatter = tables.TuBCellFormatter(cell)
+            test_run = tub_formatter.format().paragraphs[0].runs[0]
             after_text = cell.text
             self.assertEqual(prior_text, after_text)
             self.assertEqual(test_run.font.highlight_color, WD_COLOR_INDEX.RED)
@@ -166,9 +164,7 @@ class TestFormatSubject(unittest.TestCase):
     test_data = Document(data_dir / "test_subject.docx")
 
     def _check(self, formatted_cell, expected_text):
-        self.assertEqual(
-            tables.format_tub_cell(formatted_cell).text, expected_text
-        )
+        self.assertEqual(formatted_cell.text, expected_text)
 
         self.assertEqual(len(formatted_cell.paragraphs), 1)
 
@@ -191,13 +187,15 @@ class TestFormatSubject(unittest.TestCase):
 
         for row, subject in zip(test_rows, SUBJECTS):
             for cell in row.cells:
-                self._check(tables.format_subject_cell(cell), subject)
+                sformatter = tables.SubjectCellFormatter(cell)
+                self._check(sformatter.format(), subject)
 
     def test_errors(self):
         error_row = self.test_data.tables[0].rows[6]
         for cell in error_row.cells:
             prior_text = cell.text
-            test_run = tables.format_tub_cell(cell).paragraphs[0].runs[0]
+            sformatter = tables.SubjectCellFormatter(cell)
+            test_run = sformatter.format().paragraphs[0].runs[0]
             after_text = cell.text
             self.assertEqual(prior_text, after_text)
             self.assertEqual(test_run.font.highlight_color, WD_COLOR_INDEX.RED)
@@ -230,10 +228,8 @@ class TestQuestionFormatter(unittest.TestCase):
         cells = self.test_data.tables[0].rows[0].cells
 
         for cell in cells:
-            q_parser = tables.QuestionCellFormatter(
-                tables.preprocess_cell(cell)
-            )
-            test_text = self._extract_cell_text(q_parser.parse())
+            q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
+            test_text = self._extract_cell_text(q_parser.format())
             self.assertEqual(test_text, expected)
             self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
 
@@ -255,10 +251,8 @@ class TestQuestionFormatter(unittest.TestCase):
         cells = self.test_data.tables[0].rows[1].cells
 
         for cell in cells:
-            q_parser = tables.QuestionCellFormatter(
-                tables.preprocess_cell(cell)
-            )
-            test_text = self._extract_cell_text(q_parser.parse())
+            q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
+            test_text = self._extract_cell_text(q_parser.format())
             self.assertEqual(test_text, expected)
             self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
 
@@ -267,10 +261,8 @@ class TestQuestionFormatter(unittest.TestCase):
         cells = self.test_data.tables[0].rows[2].cells
 
         for cell in cells:
-            q_parser = tables.QuestionCellFormatter(
-                tables.preprocess_cell(cell)
-            )
-            test_cell = q_parser.parse()
+            q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
+            test_cell = q_parser.format()
             self.assertEqual(
                 test_cell.paragraphs[0].runs[0].font.highlight_color,
                 WD_COLOR_INDEX.YELLOW,
@@ -283,10 +275,8 @@ class TestQuestionFormatter(unittest.TestCase):
         cells = self.test_data.tables[0].rows[3].cells
 
         for cell in cells:
-            q_parser = tables.QuestionCellFormatter(
-                tables.preprocess_cell(cell)
-            )
-            test_cell = q_parser.parse()
+            q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
+            test_cell = q_parser.format()
             self.assertEqual(
                 test_cell.paragraphs[-1].runs[0].font.highlight_color,
                 WD_COLOR_INDEX.YELLOW,

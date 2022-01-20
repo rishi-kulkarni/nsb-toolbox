@@ -2,12 +2,14 @@ import re
 from enum import Enum
 from functools import lru_cache
 from typing import Optional
+from abc import ABC, abstractclassmethod
 
 from docx import Document
 from docx.enum.text import WD_COLOR_INDEX
 from docx.shared import Inches, Pt
-from docx.table import _Cell, _Row
+from docx.table import _Cell, _Row, _Column
 from docx.text.paragraph import Paragraph
+import docx.document
 
 from .classes import QuestionType, Subject, TossUpBonus, ErrorLogger
 from .docx_utils import (
@@ -43,6 +45,16 @@ class QuestionFormatterState(Enum):
     STEM_END = 1
     CHOICES = 2
     ANSWER = 3
+
+
+class CellFormatter(ABC):
+    @abstractclassmethod
+    def __init__(self, cell: _Cell, error_logger: Optional[ErrorLogger] = None):
+        pass
+
+    @abstractclassmethod
+    def format(self):
+        pass
 
 
 def make_jans_shadings(table):
@@ -117,7 +129,7 @@ def _compile(regex: str):
     return re.compile(regex, re.IGNORECASE)
 
 
-class QuestionCellFormatter:
+class QuestionCellFormatter(CellFormatter):
     """Formats a cell containing a Science Bowl Question."""
 
     _q_type_possible = _compile(r"\s*(Short Answer|SA|Multiple Choice|MC)\s*")
@@ -262,8 +274,8 @@ class QuestionCellFormatter:
             # if we made it here, we found everything.
             self.found_all = True
 
-    def parse(self):
-        """Parser function. Takes a preprocessed question cell
+    def format(self):
+        """Takes a preprocessed question cell
         and returns a cell containing a properly-formatted
         Science Bowl question.
 
@@ -315,121 +327,90 @@ class QuestionCellFormatter:
             # of the question, highlight the cell red
             highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
             if self.error_logger is not None:
-                self.error_logger.log_error("Couldn't parse question.")
+                self.error_logger.log_error(
+                    f"Couldn't parse question, was looking for {self.state}"
+                )
 
         return self.cell
 
 
-def format_tub_cell(cell: _Cell, error_logger: Optional[ErrorLogger] = None) -> _Cell:
-    """Formats the TOSS-UP/BONUS cell. Expands shorthand (TU/B/VB) as well.
-
-    Parameters
-    ----------
-    cell : _Cell
-
-    Returns
-    -------
-    _Cell
-    """
+class TuBCellFormatter(CellFormatter):
     tub_possible = _compile(r"\s*(TOSS-UP|BONUS|VISUAL BONUS|TU|B|VB)\b")
 
-    tub_match = tub_possible.match(cell.text)
+    def __init__(self, cell: _Cell, error_logger: Optional[ErrorLogger] = None):
+        self.cell = cell
+        self.error_logger = error_logger
 
-    if tub_match:
-        put = TossUpBonus.from_string(tub_match.group(1)).value
-        clear_cell(cell)
-        tub_run = cell.paragraphs[0].runs[0]
-        tub_run.text = put
-        tub_run.italic = None
-        tub_run.bold = None
-        highlight_cell_text(cell, None)
+    def format(self) -> _Cell:
+        tub_match = self.tub_possible.match(self.cell.text)
 
-    # if a match can't be found, highlight the cell red
-    else:
-        highlight_cell_text(cell, WD_COLOR_INDEX.RED)
-        if error_logger is not None:
-            error_logger.log_error(
-                "Question must be a toss-up, bonus, or visual bonus."
-            )
+        if tub_match:
+            put = TossUpBonus.from_string(tub_match.group(1)).value
+            clear_cell(self.cell)
+            tub_run = self.cell.paragraphs[0].runs[0]
+            tub_run.text = put
+            tub_run.italic = None
+            tub_run.bold = None
+            highlight_cell_text(self.cell, None)
 
-    return cell
+        # if a match can't be found, highlight the cell red
+        else:
+            highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
+            if self.error_logger is not None:
+                self.error_logger.log_error(
+                    "Question must be a toss-up, bonus, or visual bonus."
+                )
+
+        return self.cell
 
 
-def format_subject_cell(
-    cell: _Cell, error_logger: Optional[ErrorLogger] = None
-) -> _Cell:
-    """Formats the Subject cell. Expands shorthand as well.
+class SubjectCellFormatter(CellFormatter):
 
-    Parameters
-    ----------
-    cell : _Cell
-
-    Returns
-    -------
-    _Cell
-    """
     subject_possible = _compile(
         r"\s*(BIOLOGY|B|CHEMISTRY|C|EARTH AND SPACE|ES|ENERGY|EN|MATH|M|PHYSICS|P)\b"
     )
-    subject_match = subject_possible.match(cell.text)
 
-    if subject_match:
-        put = Subject.from_string(subject_match.group(1)).value
-        clear_cell(cell)
-        subj_run = cell.paragraphs[0].runs[0]
-        subj_run.text = put
-        subj_run.italic = None
-        subj_run.bold = None
-        highlight_cell_text(cell, None)
-    # if a match can't be found, highlight the cell red
-    else:
-        highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+    def __init__(self, cell: _Cell, error_logger: Optional[ErrorLogger] = None):
+        self.cell = cell
+        self.error_logger = error_logger
+
+    def format(self):
+
+        subject_match = self.subject_possible.match(self.cell.text)
+
+        if subject_match:
+            put = Subject.from_string(subject_match.group(1)).value
+            clear_cell(self.cell)
+            subj_run = self.cell.paragraphs[0].runs[0]
+            subj_run.text = put
+            subj_run.italic = None
+            subj_run.bold = None
+            highlight_cell_text(self.cell, None)
+        # if a match can't be found, highlight the cell red
+        else:
+            highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
+            if self.error_logger is not None:
+                self.error_logger.log_error("Invalid subject.")
+
+        return self.cell
+
+
+def format_column(
+    nsb_table_column: _Column,
+    formatter: CellFormatter,
+    error_logger: Optional[ErrorLogger] = None,
+) -> _Column:
+    for idx, cell in enumerate(nsb_table_column.cells[1:]):
+        preprocess_cell(cell)
         if error_logger is not None:
-            error_logger.log_error("Invalid subject.")
-
-    return cell
-
-
-def format_row(nsb_table_row: _Row, error_logger: Optional[ErrorLogger] = None) -> _Row:
-    """Formats the first three cells (TOSS-UP/BONUS,
-    SUBJECT, and QUESTION) of a row from one of Jan's tables.
-
-    Parameters
-    ----------
-    nsb_table_row : _Row
-        A row from one of Jan's question tables.
-
-    Returns
-    -------
-    _Row
-    List
-    """
-    cells_list = nsb_table_row.cells
-    if error_logger is None:
-        tub_cell = preprocess_cell(cells_list[0])
-        subject_cell = preprocess_cell(cells_list[1])
-        ques_cell = preprocess_cell(cells_list[2])
-    else:
-        tub_cell = preprocess_cell(cells_list[0])
-        subject_cell = preprocess_cell(cells_list[1])
-        ques_cell = preprocess_cell(cells_list[2])
-    # make sure first cell says TOSS-UP, BONUS, or VISUAL BONUS and nothing else
-    if tub_cell.text.strip() != "":
-        format_tub_cell(tub_cell, error_logger)
-
-    # make sure the second cell says one of our subjects and nothing else
-    if subject_cell.text.strip() != "":
-        format_subject_cell(subject_cell, error_logger)
-
-    # make sure the third cell has a well-formed question
-    if ques_cell.text.strip() != "":
-        question_formatter = QuestionCellFormatter(ques_cell, error_logger)
-        question_formatter.parse()
-
-    return nsb_table_row
+            error_logger.set_row(idx + 1)
+        cell_formatter = formatter(cell, error_logger)
+        if cell.text.strip() != "":
+            cell_formatter.format()
+    return nsb_table_column
 
 
-def format_table(table_doc: Document, verbosity=True):
+def format_table(table_doc: docx.document.Document, verbosity=True):
     """Formats a Word document containing a Science Bowl question table.
 
     Parameters
@@ -437,11 +418,21 @@ def format_table(table_doc: Document, verbosity=True):
     table_doc : Document
     verbosity : bool, default True
     """
+    FORMATTERS = {
+        "TUB": TuBCellFormatter,
+        "Subj": SubjectCellFormatter,
+        "Ques": QuestionCellFormatter,
+    }
     error_logger = ErrorLogger(verbosity)
-    # first row is the header row, so we skip it
-    for idx, row in enumerate(table_doc.tables[0].rows[1:]):
-        error_logger.set_row(idx)
-        format_row(row, error_logger)
+
+    columns = {}
+
+    columns["TUB"] = table_doc.tables[0].columns[0]
+    columns["Subj"] = table_doc.tables[0].columns[1]
+    columns["Ques"] = table_doc.tables[0].columns[2]
+
+    for col_name in columns.keys():
+        format_column(columns[col_name], FORMATTERS[col_name], error_logger)
 
     if len(error_logger.errors) > 0:
         print(error_logger)
