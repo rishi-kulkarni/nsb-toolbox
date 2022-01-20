@@ -7,7 +7,7 @@ from abc import ABC, abstractclassmethod
 from docx import Document
 from docx.enum.text import WD_COLOR_INDEX
 from docx.shared import Inches, Pt
-from docx.table import _Cell, _Row, _Column
+from docx.table import _Cell, _Column
 from docx.text.paragraph import Paragraph
 import docx.document
 
