@@ -66,6 +66,8 @@ subcommands:
 * There are two paragraph breaks before the answer line.
 * The answer line is uppercase.
 
+Notably, `nsb format` operates by moving, copying, and inserting XML elements. This ensures that **user-provided formatting won't be overwritten** (for example, superscripts and subscripts for mathematical formulae). 
+
 For example, all of the following improperly formatted questions:
 
 ![Before Formatting](/docs/images/before_format.png) 
