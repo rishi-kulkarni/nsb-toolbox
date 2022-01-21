@@ -11,7 +11,9 @@ The NSB Toolbox contains a set of tools to make it easier to write and edit Scie
 1. [Installation](#installation)
 2. [Documentation](#documentation)
     1. [nsb format](#nsb-format)
-    2. [nsb make](#nsb-make)
+        1. [Auto-Formatting](#auto-format)
+        2. [Linting](#linting)
+    3. [nsb make](#nsb-make)
 
 
 <a name="installation"></a>
@@ -50,9 +52,21 @@ subcommands:
 
 ```nsb format path/to/nsb/questions.docx```
 
+<a name="auto-format"></a>
 ## Auto-Formatting
 
-```nsb format``` outright fixes a number of formatting errors. For example, all of the following improperly formatted questions:
+```nsb format``` outright fixes a number of formatting errors. It strives to produce questions that have the following characteristics:
+
+* The question class (TOSS-UP, BONUS) is uppercase.
+* Subject (Biology, Chemistry, etc.) are title case.
+* Question type (Multiple Choice, Short Answer) are italicized and title case.
+* There are four spaces between the question type and the start of the stem.
+* For multiple choice questions, there are two paragraph breaks between the stem and the first choice.
+* For multiple choice questions, there is a single paragraph break between each choice.
+* There are two paragraph breaks before the answer line.
+* The answer line is uppercase.
+
+For example, all of the following improperly formatted questions:
 
 ![Before Formatting](/docs/images/before_format.png) 
 
@@ -76,9 +90,16 @@ The mislabeled choices will be automatically corrected:
 
 ![After Multiple Choice Correction](/docs/images/after_mc_correct.png)
 
+<a name="linting"></a>
 ## Linting
 
-If ```nsb format``` fails to parse a cell, it will raise linting errors by highlighting the question and printing the error in the command line. There are two levels of errors: parsing errors, which will highlight a cell red, and question structure errors, which will highlight the problematic structure yellow. For example:
+If ```nsb format``` fails to parse a cell, it will raise linting errors by highlighting the question and printing the error in the command line. There are two levels of errors: parsing errors, which will highlight a cell red, and question structure errors, which will highlight the problematic structure yellow. `nsb format` searches for the following errors:
+
+* The question has a class, subject, type, stem, and answer. Multiple Choice questions should also have four choices.
+* Question type is correctly labeled - Multiple Choice questions should have choices, Short Answer questions should not.
+* For multiple choice questions, the wording of the answer line should match the wording of the choice.
+
+For example:
 
 ![Linter Errors](/docs/images/linter_errors.png)
 
