@@ -24,12 +24,17 @@ def preprocess_cell(cell: _Cell) -> _Cell:
         clear_cell(cell)
 
     else:
+        # this pass replaces all soft returns with hard returns
+        for para in cell.paragraphs:
+            split_soft_returns(para)
 
         for para in cell.paragraphs:
 
             # this pass coerces the font of any whitespace-only runs to
             # the document style
             for run in para.runs:
+                # remove non-breaking spaces
+                run.text = run.text.replace("\xa0", "")
                 # if there are empty runs, delete them
                 if run.text == "":
                     delete_run(run)
@@ -57,6 +62,40 @@ def preprocess_cell(cell: _Cell) -> _Cell:
                 para.runs[-1].text = para.runs[-1].text.rstrip()
 
     return cell
+
+
+def split_soft_returns(para: Paragraph) -> Paragraph:
+    """Find and replace function for turning soft returns into hard returns.
+
+    In OXML, soft returns are the same paragraph, while hard returns start
+    a new paragraph. Don't want to deal with two different kinds of line
+    breaks, so force them all the be the same kind.
+
+    Parameters
+    ----------
+    para : Paragraph
+
+    Returns
+    -------
+    Paragraph
+    """
+    idx = 0
+    for run in para.runs:
+        while (newline_loc := run.text.find("\n")) != -1:
+            run_1, run_2 = split_run_at(para, run, newline_loc)
+            run_2.text = run_2.text[1:]  # remove the newline char
+
+            # move all runs prior to this one to a new paragraph above
+            new_para = para.insert_paragraph_before(" ")
+            target_run = new_para.runs[0]
+            for source_run in reversed(para.runs[: idx + 1]):
+                target_run._r.addnext(source_run._r)
+
+            # delete the empty run at the start of the prior paragraph
+            delete_run(target_run)
+            idx = 0
+        idx += 1
+    return para
 
 
 def fuse_consecutive_runs(para: Paragraph) -> Paragraph:

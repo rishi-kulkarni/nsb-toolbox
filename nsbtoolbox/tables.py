@@ -414,7 +414,7 @@ def format_column(
     _Column
     """
     for idx, cell in enumerate(nsb_table_column.cells[1:]):
-        preprocess_cell(cell)
+        cell = preprocess_cell(cell)
         if error_logger is not None:
             error_logger.set_row(idx + 1)
         cell_formatter = formatter(cell, error_logger)
