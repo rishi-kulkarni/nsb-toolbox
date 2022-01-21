@@ -93,5 +93,5 @@ Question 7: Question type is MC, but has no choices.
 ```nsb format``` is not capable of deleting lines that contain text. This is intentional - while there are errors that ```nsb format```  highlights that it could probably fix automatically, the maintainer believes it is more prudent to leave whitespace formatting to ```nsb format``` and making any other changes by hand.
 
 <a name="nsb-make"></a>
-### nsb make
+## nsb make
 ```nsb make``` produces a blank table for writing Science Bowl questions with a designated number of lines. This is a convenience function for writers. 
