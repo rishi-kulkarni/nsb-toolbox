@@ -76,6 +76,7 @@ def initialize_table(
     nrows=0,
     name: Optional[str] = None,
     subj: Optional[str] = None,
+    set: Optional[str] = None,
     path: Optional[str] = None,
 ) -> Document:
     """Initializes a docx file containing the Science Bowl header row.
@@ -90,6 +91,9 @@ def initialize_table(
 
     subj: str, optional
         Subject. If not none, fills the subject column of the table.
+
+    set: str, optional
+        Set. If not none, fills the set column of the table.
 
     path : Optional[str], optional
         Path that the docx file should be saved to.
@@ -133,6 +137,8 @@ def initialize_table(
             if cell_idx > 0:
                 if idx == 1 and subj is not None:
                     cell.paragraphs[0].text = subj
+                elif idx == 5 and set is not None:
+                    cell.paragraphs[0].text = set
                 elif idx == 8 and name is not None:
                     cell.paragraphs[0].text = name
 

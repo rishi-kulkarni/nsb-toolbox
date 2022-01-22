@@ -3,12 +3,16 @@ from .importers import validate_path
 from .tables import format_table, initialize_table
 from docx import Document
 from .classes import Subject
+from pathlib import Path
 
 
 def make(args):
+    path = Path(args.path).with_suffix(".docx")
     if args.subj is not None:
         args.subj = Subject.from_string(args.subj).value
-    initialize_table(nrows=args.rows, name=args.name, subj=args.subj, path=args.path)
+    initialize_table(
+        nrows=args.rows, name=args.name, subj=args.subj, set=args.set, path=path
+    )
 
 
 def format(args):
@@ -55,12 +59,21 @@ def main():
     )
 
     make_parser.add_argument(
-        "-s",
+        "-st",
+        "--set",
+        choices=["HSR", "HSN", "MSR", "MSN"],
+        required=False,
+        help="Set",
+    )
+
+    make_parser.add_argument(
+        "-su",
         "--subj",
         choices=["B", "C", "P", "M", "ES", "EN"],
         required=False,
         help="Subject",
     )
+
     make_parser.set_defaults(func=make)
 
     args = argparser.parse_args()
