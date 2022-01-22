@@ -1,4 +1,4 @@
-name: Run Python Unit Tests
+name: Test, Build, and Upload
 
 on: release
 
