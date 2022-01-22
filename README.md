@@ -28,7 +28,7 @@ Currently, the NSB Toolbox can be installed via pip from this github. To do so, 
 ## Documentation
 You can access the NSB Toolbox via the ```nsb``` commandlet. Running ```nsb -h``` displays the following help menu.
 
-```
+```powershell
 (base) PS C:\Users\rishik> nsb -h
 usage: nsb [-h] {format,make} ...
 
@@ -117,4 +117,34 @@ Question 7: Question type is MC, but has no choices.
 
 <a name="nsb-make"></a>
 ## nsb make
-```nsb make``` produces a blank table for writing Science Bowl questions with a designated number of lines. This is a convenience function for writers. 
+```nsb make``` produces a blank Science Bowl question table with a designated number of lines. This is a convenience function for writers. ```nsb make -h``` shows the following help menu:
+
+```powershell
+(base) PS C:\Users\rishik> nsb make -h
+usage: nsb make [-h] [-n NAME] [-st {HSR,HSN,MSR,MSN}] [-su {B,C,P,M,ES,EN}] path rows
+
+positional arguments:
+  path                  path to the Science Bowl docx file
+  rows                  number of rows in output table
+
+options:
+  -h, --help            show this help message and exit
+  -n NAME, --name NAME  Last, First name of author
+  -st {HSR,HSN,MSR,MSN}, --set {HSR,HSN,MSR,MSN}
+                        Set
+  -su {B,C,P,M,ES,EN}, --subj {B,C,P,M,ES,EN}
+                        Subject
+```
+
+For example, to create a table for 120 high school regional Physics questions for author: "Kulkarni, Rishi" the following command would work:
+
+```powershell 
+nsb make -n "Kulkarni, Rishi" -st HSR -su P Kulkarni_HS_Physics_Regionals 120
+```
+
+<a name="known-issues"></a>
+## Known Issues
+
+* If ```nsb format``` is used on a document with tracked changes, it will assume the changes were accepted. 
+
+Please report any other issues you find on [Github](https://github.com/rishi-kulkarni/nsb-toolbox).
