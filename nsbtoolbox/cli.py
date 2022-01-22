@@ -2,10 +2,13 @@ import argparse
 from .importers import validate_path
 from .tables import format_table, initialize_table
 from docx import Document
+from .classes import Subject
 
 
 def make(args):
-    initialize_table(nrows=args.rows, path=args.path)
+    if args.subj is not None:
+        args.subj = Subject.from_string(args.subj).value
+    initialize_table(nrows=args.rows, name=args.name, subj=args.subj, path=args.path)
 
 
 def format(args):
@@ -37,12 +40,26 @@ def main():
         "make", parents=[path_parser], help="make a Science Bowl table"
     )
     make_parser.add_argument(
-        "-r",
-        "--rows",
-        action="store",
+        "rows",
+        metavar="rows",
         type=int,
-        required=True,
         help="number of rows in output table",
+    )
+    make_parser.add_argument(
+        "-n",
+        "--name",
+        action="store",
+        type=str,
+        required=False,
+        help="Last, First name of author",
+    )
+
+    make_parser.add_argument(
+        "-s",
+        "--subj",
+        choices=["B", "C", "P", "M", "ES", "EN"],
+        required=False,
+        help="Subject",
     )
     make_parser.set_defaults(func=make)
 

@@ -72,13 +72,24 @@ def make_jans_shadings(table):
     shade_columns(table.columns[7], "#daeef3")
 
 
-def initialize_table(nrows=0, path: Optional[str] = None) -> Document:
+def initialize_table(
+    nrows=0,
+    name: Optional[str] = None,
+    subj: Optional[str] = None,
+    path: Optional[str] = None,
+) -> Document:
     """Initializes a docx file containing the Science Bowl header row.
 
     Parameters
     ----------
     nrows : int, optional
         Number of extra rows to append to the table, by default 0
+
+    name : str, optional
+        Name of author. If not none, fills the author column of the table.
+
+    subj: str, optional
+        Subject. If not none, fills the subject column of the table.
 
     path : Optional[str], optional
         Path that the docx file should be saved to.
@@ -117,8 +128,13 @@ def initialize_table(nrows=0, path: Optional[str] = None) -> Document:
     make_jans_shadings(table)
 
     for idx, column in enumerate(table.columns):
-        for cell in column.cells:
+        for cell_idx, cell in enumerate(column.cells):
             cell.width = Inches(COL_WIDTHS[idx])
+            if cell_idx > 0:
+                if idx == 1 and subj is not None:
+                    cell.paragraphs[0].text = subj
+                elif idx == 8 and name is not None:
+                    cell.paragraphs[0].text = name
 
     if path is not None:
         document.save(path)
