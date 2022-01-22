@@ -21,7 +21,7 @@ The NSB Toolbox contains a set of tools to make it easier to write and edit Scie
 Currently, the NSB Toolbox can be installed via pip from this github. To do so, you will need:
 
 * Python 3.8 or greater installed on your computer.
-* Enter and run ```pip install git+https://github.com/rishi-kulkarni/nsbtoolbox.git``` in your command line.
+* Enter and run ```pip install nsb-toolbox``` in your command line.
 * Verify the installation worked by running ```nsb -h``` in your command line. If the help information for the toolbox appears, the installation was successful.
 
 <a name="documentation"></a>
