@@ -14,7 +14,7 @@ The NSB Toolbox contains a set of tools to make it easier to write and edit Scie
         1. [Auto-Formatting](#auto-format)
         2. [Linting](#linting)
     3. [nsb make](#nsb-make)
-
+3. [Known Issues](#known-issues)
 
 <a name="installation"></a>
 ## Installation
