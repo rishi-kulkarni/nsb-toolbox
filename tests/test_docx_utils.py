@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 
 from docx import Document
-from nsbtoolbox import docx_utils
+from nsb_toolbox import docx_utils
 
 data_dir = Path(__file__).parent / "test_data"
 

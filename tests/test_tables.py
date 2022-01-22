@@ -4,7 +4,7 @@ from pathlib import Path
 from docx import Document
 from docx.enum.text import WD_COLOR_INDEX
 from docx.shared import Pt
-from nsbtoolbox import tables
+from nsb_toolbox import tables
 
 data_dir = Path(__file__).parent / "test_data"
 
