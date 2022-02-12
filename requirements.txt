@@ -1,1 +1,2 @@
 python-docx==0.8.11
+strictyaml==1.6.1
