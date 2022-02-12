@@ -354,6 +354,9 @@ class QuestionCellFormatter(CellFormatter):
                 self.error_logger.log_error(
                     f"Couldn't parse question, was looking for {self.state}"
                 )
+        else:
+            if self.error_logger is not None:
+                self.error_logger.stats[self.q_type.value] += 1
 
         return self.cell
 
@@ -376,6 +379,9 @@ class TuBCellFormatter(CellFormatter):
             tub_run.italic = None
             tub_run.bold = None
             highlight_cell_text(self.cell, None)
+
+            if self.error_logger is not None:
+                self.error_logger.stats[put] += 1
 
         # if a match can't be found, highlight the cell red
         else:
@@ -469,7 +475,6 @@ def format_table(table_doc: docx.document.Document, verbosity=True):
     for col_name in columns.keys():
         format_column(columns[col_name], FORMATTERS[col_name], error_logger)
 
-    if len(error_logger.errors) > 0:
-        print(error_logger)
-    else:
+    if len(error_logger.errors) == 0:
         print("Found no errors 😄")
+    print(error_logger)

@@ -153,6 +153,13 @@ class ErrorLogger:
         self.errors = []
         self.row_number = None
 
+        self.stats = {
+            "TOSS-UP": 0,
+            "BONUS": 0,
+            "Short Answer": 0,
+            "Multiple Choice": 0,
+        }
+
     def set_row(self, row_number):
         self.row_number = row_number
 
@@ -160,7 +167,18 @@ class ErrorLogger:
         self.errors.append(f"Question {self.row_number}: {error_msg}")
 
     def __repr__(self) -> str:
+        ret = None
         if self.verbosity is True:
-            return "\n".join(self.errors)
+            ret = "\n".join(self.errors)
         else:
-            return f"Found {len(self.errors)} errors."
+            ret = f"Found {len(self.errors)} errors."
+
+        stats = [f"{key}: {item}" for key, item in self.stats.items()]
+        stats_table = (
+            "\n\n"
+            + "Question Statistics\n"
+            + "-------------------\n"
+            + "\n".join(stats)
+        )
+        ret += stats_table
+        return ret
