@@ -3,6 +3,7 @@ name: Test, Build, and Upload
 on: 
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
   build:
