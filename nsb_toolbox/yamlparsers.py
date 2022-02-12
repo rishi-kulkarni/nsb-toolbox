@@ -46,6 +46,27 @@ def load_yaml(path: Path) -> strictyaml.YAML:
 
 
 def _prepare_round_config(round: str, round_config: dict) -> dict:
+    """Internal function that combines a base config with a specific
+    round config.
+
+    The base config is updated with the round config,
+    overwriting any common fields.
+
+    Parameters
+    ----------
+    round : str
+    round_config : dict
+
+    Returns
+    -------
+    dict
+
+    Raises
+    ------
+    ValueError
+        Raises an error if the resulting config dict is empty. Typically due
+        to typos in the config file.
+    """
     config = {}
 
     if "Base" in round_config:
@@ -54,8 +75,8 @@ def _prepare_round_config(round: str, round_config: dict) -> dict:
     if round in round_config:
         config.update(round_config[round])
 
-    if "TU" not in config or "B" not in config:
-        raise ValueError(f"No tossup or bonus numbers specified for {round}")
+    if not config:
+        raise ValueError(f"Invalid configuration for round {round}")
 
     return config
 
@@ -96,6 +117,8 @@ def _generate_questions_per_round(
     else:
         subcat_list = None
 
+    # we assume the config file is correct, which allows us to include VB questions in
+    # natl finals and have toss-up only TB rounds
     if tub in config:
         difficulties = [
             int(key) for key, value in config[tub].items() for i in range(int(value))
@@ -104,6 +127,8 @@ def _generate_questions_per_round(
     else:
         difficulties = []
 
+    # go in reversed order to yield the final question of the round first,
+    # which must be short answer
     letters = list(reversed(string.ascii_uppercase))[-len(difficulties) :]
 
     for idx, v in enumerate(difficulties):
@@ -114,6 +139,8 @@ def _generate_questions_per_round(
         else:
             qtype = None
         if subcat_list is not None:
+            # this way we can wrap over the subcat list, letting us specify
+            # a ratio rather than the exact amount we need
             subcategory = subcat_list[idx % len(subcat_list)]
         else:
             subcategory = None
