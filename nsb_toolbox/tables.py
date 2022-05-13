@@ -218,10 +218,6 @@ class QuestionCellFormatter(CellFormatter):
         choice_match = self._choices_re.match(para.text)
 
         if choice_match:
-            # insert a blank paragraph before this one. only
-            # do this if we are looking for W), the first choice
-            if self.current_choice == 0:
-                para.insert_paragraph_before("")
 
             # the first run should contain the choice
             choice_run = para.runs[0]
