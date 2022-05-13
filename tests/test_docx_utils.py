@@ -109,5 +109,15 @@ class TestPreprocessCell(unittest.TestCase):
         test = [para.text for para in docx_utils.preprocess_cell(cell).paragraphs]
         self.assertEqual(expected, test)
 
+    def test_cell_9(self):
+        cell = self.test_data.tables[0].rows[8].cells[0]
+
+        expected = [
+            "This is a single run of text that only contains nonbreaking spaces."
+        ]
+
+        test = [para.text for para in docx_utils.preprocess_cell(cell).paragraphs]
+        self.assertEqual(expected, test)
+
     def test_save(self):
         self.test_data.save(self.temp_data)
