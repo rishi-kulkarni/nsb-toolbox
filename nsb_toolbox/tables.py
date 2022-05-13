@@ -254,10 +254,6 @@ class QuestionCellFormatter(CellFormatter):
         if answer_match:
             para.insert_paragraph_before("")
 
-            # set the font to all-caps for every run in the answer line
-            for run in para.runs:
-                run.text = run.text.upper()
-
             # for MC questions, additional checks to make sure
             # answer line matches choice
             if self.q_type is QuestionType.MULTIPLE_CHOICE:
@@ -284,7 +280,10 @@ class QuestionCellFormatter(CellFormatter):
                     # if it doesn't raise a linting error.
                     else:
                         choice_num = self._choices.index(test_choice_match.group(1))
-                        if self.choices_para[choice_num].text.upper() != answer_text:
+                        if (
+                            self.choices_para[choice_num].text.upper()
+                            != answer_text.upper()
+                        ):
                             highlight_paragraph_text(para, WD_COLOR_INDEX.YELLOW)
                             if self.error_logger is not None:
                                 self.error_logger.log_error(
