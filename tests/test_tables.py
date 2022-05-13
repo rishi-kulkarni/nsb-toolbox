@@ -144,7 +144,6 @@ class TestQuestionFormatter(unittest.TestCase):
         expected = [
             "Multiple Choice",
             "    This is a well-formatted question.",
-            "",
             "W) This is the W) choice",
             "X) This is the X) choice",
             "Y) This is the Y) choice",
