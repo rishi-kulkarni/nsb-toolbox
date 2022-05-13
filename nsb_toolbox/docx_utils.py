@@ -33,13 +33,13 @@ def preprocess_cell(cell: _Cell) -> _Cell:
             # this pass coerces the font of any whitespace-only runs to
             # the document style
             for run in para.runs:
-                # remove non-breaking spaces
-                run.text = run.text.replace("\xa0", "")
+                # replace non-breaking spaces with regular spaces
+                run.text = run.text.replace("\xa0", " ")
                 # if there are empty runs, delete them
                 if run.text == "":
                     delete_run(run)
-                # if there are weirdly formatted run that is only whitespace, strip
-                # their formatting
+                # if there are weirdly formatted run that is only whitespace,
+                # strip their formatting
                 elif run.text.strip() == "":
                     run.font.italic = (
                         run.font.bold
