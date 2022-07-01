@@ -1,9 +1,11 @@
 import argparse
+from pathlib import Path
+
+from docx import Document
+
+from .classes import Subject
 from .importers import validate_path
 from .tables import format_table, initialize_table
-from docx import Document
-from .classes import Subject
-from pathlib import Path
 
 
 def make(args):
