@@ -1,2 +1,5 @@
 python-docx==0.8.11
-strictyaml==1.6.1
+pyyaml==6.0
+scipy>=1.8.0
+
+pytest>=7.0.0
