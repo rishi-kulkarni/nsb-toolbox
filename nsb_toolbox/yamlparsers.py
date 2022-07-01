@@ -1,18 +1,19 @@
-from email.generator import Generator
-import string
+import collections.abc
+import itertools
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from random import shuffle
-from typing import Optional, Tuple
-from itertools import islice, cycle
+from typing import Dict, Generator, List, Optional, Union
 
-import strictyaml
+import numpy as np
+import yaml
 
 from .classes import QuestionType, TossUpBonus
 
 
 @dataclass
 class QuestionDetails:
+    set: str
     round: str
     tub: TossUpBonus
     difficulty: int
@@ -20,8 +21,42 @@ class QuestionDetails:
     qtype: Optional[QuestionType] = None
     subcategory: Optional[str] = None
 
+    def __post_init__(self):
 
-def load_yaml(path: Path) -> strictyaml.YAML:
+        if isinstance(self.tub, str):
+            self.tub = TossUpBonus.from_string(self.tub)
+
+        if isinstance(self.qtype, str):
+            self.qtype = QuestionType.from_string(self.qtype)
+
+
+@dataclass
+class ShuffleConfig:
+    subcategory: bool
+    difficulty: bool
+    rng: np.random.Generator
+
+    def __post_init__(self):
+        if not isinstance(self.rng, np.random.Generator):
+            self.rng = np.random.default_rng(self.rng)
+
+
+@dataclass
+class SetConfig:
+    Set: List[str]
+    Prefix: str
+    Rounds: List[int]
+    Template: dict
+
+    def __post_init__(self):
+        if isinstance(self.Set, str):
+            self.Set = [self.Set]
+
+        if isinstance(self.Rounds, int):
+            self.Rounds = [self.Rounds]
+
+
+def load_yaml(path: Union[Path, str]) -> Dict:
     """Parses a yaml files and returns a YAML representation object.
 
     Parameters
@@ -36,166 +71,188 @@ def load_yaml(path: Path) -> strictyaml.YAML:
     ------
     FileNotFoundError
     """
+    if isinstance(path, str):
+        path = Path(path)
+
     if path.exists():
         with open(path) as file:
-            data = file.read()
-            data = strictyaml.load(data)
-            return data.data
+            data = yaml.safe_load(file)
+            return data
     else:
         raise FileNotFoundError(f"no such file: {path}")
 
 
-def _prepare_round_config(round: str, round_config: dict) -> dict:
-    """Internal function that combines a base config with a specific
-    round config.
-
-    The base config is updated with the round config,
-    overwriting any common fields.
+def config_to_question_list(config: Dict) -> List[QuestionDetails]:
+    """Converts a configuration dictionary into a list of QuestionDetails
+    specifications.
 
     Parameters
     ----------
-    round : str
-    round_config : dict
+    config : Dict
+        Dictionary loaded from a yaml config using `load_yaml`.
 
     Returns
     -------
-    dict
+    List[QuestionDetails]
+        Complete question specification for the config file.
+    """
+    shuffle_config = _parse_shuffle(config["Shuffle"])
+    round_definitions = config["Round Definitions"]
 
-    Raises
+    parsed_sets = parse_sets(config["Sets"], round_definitions)
+
+    return list(
+        generate_questions(parsed_sets=parsed_sets, shuffle_config=shuffle_config)
+    )
+
+
+def generate_questions(
+    parsed_sets: Dict, shuffle_config: ShuffleConfig
+) -> Generator[QuestionDetails, None, None]:
+    """Generates QuestionDetails instances based on a parsed set of
+    Science Bowl round descriptions and a ShuffleConfig instance.
+
+    Parameters
+    ----------
+    parsed_sets : Dict
+        Science Bowl set specification generated with parse_sets.
+    shuffle_config : ShuffleConfig
+        Determines if subcategories and difficulties are shuffled
+        within each round.
+
+    Yields
     ------
-    ValueError
-        Raises an error if the resulting config dict is empty. Typically due
-        to typos in the config file.
+    Generator[QuestionDetails, None, None]
+
+    Notes
+    -----
+
+    The convention that the last pair of questions for each subject
+    ought to be "Short Answer" questions is hard-coded into this function.
+    Otherwise, all information is read from the yaml configuration.
     """
-    config = {}
+    for set_config in parsed_sets:
 
-    if "Base" in round_config:
-        config.update(round_config["Base"])
+        for set_name, round_num, q_tub in itertools.product(
+            set_config.Set, set_config.Rounds, set_config.Template.keys()
+        ):
 
-    if round in round_config:
-        config.update(round_config[round])
+            template = set_config.Template[q_tub]
+            difficulties = template.get("LOD")
+            subcategories = template.get("Subcategory", [None for e in difficulties])
+            q_types = [None for e in difficulties[:-1]] + ["Short Answer"]
+            q_letters = [chr(i) for i in range(ord("A"), ord("A") + len(difficulties))]
 
-    if not config:
-        raise ValueError(f"Invalid configuration for round {round}")
+            if shuffle_config.difficulty:
+                shuffle_config.rng.shuffle(difficulties)
 
-    return config
+            if shuffle_config.subcategory:
+                shuffle_config.rng.shuffle(subcategories)
+
+            for lod, subcat, q_type, q_letter in itertools.zip_longest(
+                difficulties, subcategories, q_types, q_letters, fillvalue=None
+            ):
+                yield QuestionDetails(
+                    set=set_name,
+                    round=f"{set_config.Prefix}{round_num}",
+                    tub=q_tub,
+                    difficulty=lod,
+                    letter=q_letter,
+                    qtype=q_type,
+                    subcategory=subcat,
+                )
 
 
-def _generate_questions_per_round(
-    round_tuple: Tuple[str, str], config: dict, tub: str
-) -> Generator:
-    """Takes in a dictionary of configuration information for a round and generates
-    QuestionDetail class instances.
+def _parse_shuffle(shuffle_config):
+    """Helper function that parses the "Shuffle" portion of the
+    configuration dictionary."""
+    return ShuffleConfig(
+        subcategory=shuffle_config["Subcategory"],
+        difficulty=shuffle_config["LOD"],
+        rng=shuffle_config.get("Seed", None),
+    )
+
+
+def parse_sets(config: List[Dict], round_definitions: Dict) -> List[SetConfig]:
+    """Reads a list of set configurations and populates them with the appropriate
+    round templates.
 
     Parameters
     ----------
-    round_tuple : Tuple[str, str]
-        Tuple in the form of ("Round Type", "Number"), ie ("RR", "1")
-    config : dict
-        Dict containing configuration information for the round.
-    tub : str
-        TU or B
+    config : List[Dict]
+        Science Bowl set specifications
+    round_definitions : Dict
+        Dictionary of Science Bowl round templates
 
-    Yields
+    Returns
     -------
-    Generator
-        Yields QuestionDetails objects
+    List[SetConfig]
+        List of SetConfig class instances that can be consumed by generate_questions
+        to produce question specifications.
     """
-    round = "".join(round_tuple)
-    round_config = config[round_tuple[0]]
+    set_configs = deepcopy(config)
 
-    config = _prepare_round_config(round, round_config)
+    out = []
 
-    # this makes subcategories go from {'Space': 2, 'Earth': 1} to
-    # ['Space', 'Space', 'Earth']
-    if "Subcategories" in config:
-        subcat_list = [
-            key
-            for key, value in config["Subcategories"].items()
-            for i in range(int(value))
-        ]
-    else:
-        subcat_list = None
+    for set_config in map(lambda x: SetConfig(**x), set_configs):
 
-    # we assume the config file is correct, which allows us to include VB questions in
-    # natl finals and have toss-up only TB rounds
-    if tub in config:
-        difficulties = [
-            int(key) for key, value in config[tub].items() for i in range(int(value))
-        ]
-        shuffle(difficulties)
-    else:
-        difficulties = []
+        if isinstance(base_template := set_config.Template, str):
+            set_config.Template = deepcopy(round_definitions[base_template])
 
-    # go in reversed order to yield the final question of the round first,
-    # which must be short answer
-    letters = list(reversed(string.ascii_uppercase))[-len(difficulties) :]
+        elif isinstance(set_config.Template, collections.abc.Mapping):
+            set_config.Template = _copy_template_and_add(round_definitions, set_config)
 
-    for idx, v in enumerate(difficulties):
-        difficulty = v
-        letter = letters[idx]
-        if idx == 0:
-            qtype = QuestionType("Short Answer")
-        else:
-            qtype = None
-        if subcat_list is not None:
-            # this way we can wrap over the subcat list, letting us specify
-            # a ratio rather than the exact amount we need
-            subcategory = subcat_list[idx % len(subcat_list)]
-        else:
-            subcategory = None
+        out.append(set_config)
 
-        yield QuestionDetails(
-            round=round,
-            tub=TossUpBonus.from_string(tub),
-            difficulty=difficulty,
-            letter=letter,
-            qtype=qtype,
-            subcategory=subcategory,
-        )
+    return out
 
 
-def generate_questions_per_set(config: dict) -> Generator:
-    """Generator that yields QuestionDetails objects for every
-    question specified in an assignment yaml file.
+def _copy_template_and_add(round_definitions: Dict, set_config: Dict) -> Dict:
+    """Handles the 'from, add' grammar in the config file.
 
     Parameters
     ----------
-    config : dict
-        Configuration dictionary pulled from a yaml file
+    round_definitions : Dict
+        Dictionary of round definition templates.
+    set_dict : Dict
+        Dictionary describing a set of Science Bowl rounds.
 
-    Yields
+    Returns
     -------
-    Generator
-        Yields QuestionDetails objects
+    Dict
+        set_dict with the template filled in from round_definitions and
+        whichever additions were specified.
     """
-    rounds = [
-        (key, str(idx + 1))
-        for key, value in config["Rounds"].items()
-        for idx in range(int(value))
-    ]
-    # organizing this generator like this allows us to do lazy evaluation AND yield
-    # questions in order from most to least strictness. this makes sure we can
-    # populate the final question of each round first, which typically MUST be
-    # short answer and might have a subcategory. after doing those, we have
-    # more flexibility
-    for tub in ("TU", "B", "VB"):
-        generators = [
-            _generate_questions_per_round(round, config, tub) for round in rounds
-        ]
-        yield from _roundrobin(*generators)
+    base_template = set_config.Template.get(
+        "from",
+        KeyError(
+            "If Template is a dictionary, it should "
+            f"contain a 'from' key, found {set_config.Template.items()}"
+        ),
+    )
+
+    to_add = set_config.Template.get("add", {})
+
+    template = deepcopy(round_definitions[base_template])
+    merge(to_add, template)
+    return template
 
 
-def _roundrobin(*iterables):
-    "roundrobin('ABC', 'D', 'EF') --> A D E B F C"
-    # Recipe credited to George Sakkis
-    num_active = len(iterables)
-    nexts = cycle(iter(it).__next__ for it in iterables)
-    while num_active:
-        try:
-            for next in nexts:
-                yield next()
-        except StopIteration:
-            # Remove the iterator we just exhausted from the cycle.
-            num_active -= 1
-            nexts = cycle(islice(nexts, num_active))
+def merge(lhs: Dict, rhs: Dict):
+    """Merges left-hand dictionary into right-hand dictionary, combining
+    lists of elements if necessary.
+
+    Parameters
+    ----------
+    lhs, rhs : Dict
+        Dicts to be merged. lhs is merged into rhs
+
+    """
+    if isinstance(lhs, dict):
+        for key, value in lhs.items():
+            if key not in rhs:
+                rhs[key] = deepcopy(value)
+            else:
+                merge(value, rhs[key])
+    elif isinstance(lhs, list):
+        rhs.extend(lhs)

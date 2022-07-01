@@ -1,0 +1,80 @@
+Shuffle:
+  Subcategory: True # shuffles subcategories between toss-up and bonus
+  LOD: False # shuffles difficulties within each round
+  Seed: ~
+
+Round Definitions:
+  Tiebreakers:
+    TU:
+      LOD: [2]
+
+  RoundRobin:
+    TU:
+      LOD: [1, 1, 1, 1]
+      Subcategory: [Organic, ~, ~, ~]
+
+    B:
+      LOD: [1, 1, 1, 1]
+      Subcategory: [Organic, ~, ~, ~]
+
+  DoubleElim1-4:
+    TU:
+      LOD: [2, 2, 2, 2]
+
+    B:
+      LOD: [2, 2, 2, 2]
+
+  DoubleElim5-6:
+    TU:
+      LOD: [2, 2, 2, 2]
+
+    B:
+      LOD: [2, 2, 3, 3]
+
+  DoubleElim7-9:
+    TU:
+      LOD: [2, 2, 3, 3]
+    B:
+      LOD: [2, 3, 3, 3]
+
+Sets:
+  - Set: [HSR]
+    Prefix: RR
+    Rounds: [1, 2]
+    Template: RoundRobin
+
+  - Set: [HSR]
+    Prefix: TB
+    Rounds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    Template: Tiebreakers
+
+  - Set: [HSR-A, HSR-B]
+    Prefix: RR
+    Rounds: [3, 4, 6, 7, 8]
+    Template: RoundRobin
+
+  - Set: [HSR-A, HSR-B]
+    Prefix: RR
+    Rounds: [5]
+    Template:
+      from: RoundRobin
+      add:
+        TU:
+          LOD: [1]
+        B:
+          LOD: [1]
+
+  - Set: [HSR-A, HSR-B]
+    Prefix: DE
+    Rounds: [1, 2, 3, 4]
+    Template: DoubleElim1-4
+
+  - Set: [HSR-A, HSR-B]
+    Prefix: DE
+    Rounds: [5, 6]
+    Template: DoubleElim5-6
+
+  - Set: [HSR-A, HSR-B]
+    Prefix: DE
+    Rounds: [7, 8, 9]
+    Template: DoubleElim7-9
