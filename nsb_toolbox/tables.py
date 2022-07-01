@@ -52,11 +52,11 @@ class CellFormatter(ABC):
 
     @abstractclassmethod
     def __init__(self, cell: _Cell, error_logger: Optional[ErrorLogger] = None):
-        pass
+        """All CellFormatters take the same input arguments."""
 
     @abstractclassmethod
     def format(self):
-        pass
+        """All CellFormatters have a format function."""
 
 
 def make_jans_shadings(table):
@@ -182,10 +182,9 @@ class QuestionCellFormatter(CellFormatter):
 
             if run_match:
                 self.q_type = QuestionType.from_string(run_match.group(1))
-                run_length = len(q_type_run.text)
                 # if the run contains more than the question type, split
                 # the run into two
-                if run_match.span()[1] < run_length:
+                if run_match.span()[1] < len(q_type_run.text):
                     q_type_run, _ = split_run_at(para, q_type_run, run_match.span()[1])
 
                 q_type_run.text = self.q_type.value
@@ -207,7 +206,7 @@ class QuestionCellFormatter(CellFormatter):
             # doing it this way ensures that any other formatting in
             # the stem is preserved (superscripts, subscripts, etc.)
             stem_run = para.runs[1]
-            stem_run.text = "".join(["    ", stem_run.text.lstrip()])
+            stem_run.text = f"    {stem_run.text.lstrip()}"
 
             self.state = QuestionFormatterState.STEM_END
         else:

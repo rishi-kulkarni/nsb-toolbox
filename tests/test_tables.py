@@ -10,7 +10,7 @@ data_dir = Path(__file__).parent / "test_data"
 
 
 class TestInitializeTable(unittest.TestCase):
-    def _check_table_characteristics(self, document, nrows):
+    def _check_table_characteristics(self, document, nrows, subj, _set, name):
 
         font = document.styles["Normal"].font
         self.assertEqual(font.name, "Times New Roman")
@@ -21,13 +21,29 @@ class TestInitializeTable(unittest.TestCase):
         self.assertEqual(len(table.rows), nrows + 1)
 
         for idx, cell in enumerate(table.rows[0].cells):
+
             self.assertAlmostEqual(cell.width.inches, tables.COL_WIDTHS[idx], places=2)
+
+        if subj:
+            for cell in table.columns[1].cells[1:]:
+                self.assertEqual(cell.text, subj)
+
+        if _set:
+            for cell in table.columns[5].cells[1:]:
+                self.assertEqual(cell.text, _set)
+
+        if name:
+            for cell in table.columns[8].cells[1:]:
+                self.assertEqual(cell.text, name)
 
     def test_intialize_table(self):
         _nrows = (0, 90, 150, 180)
-        for nrow in _nrows:
-            document = tables.initialize_table(nrow)
-            self._check_table_characteristics(document, nrow)
+        _sets = (None, "HSR", "HSR-A", "MSN")
+        _subj = (None, "Chemistry", "Biology", "Earth and Space")
+        _names = (None, "Rishi", "Casimir", "Andrew")
+        for nrow, subj, _set, name in zip(_nrows, _subj, _sets, _names):
+            document = tables.initialize_table(nrow, subj=subj, set=_set, name=name)
+            self._check_table_characteristics(document, nrow, subj, _set, name)
 
 
 class TestFormatTUBCell(unittest.TestCase):
