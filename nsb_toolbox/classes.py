@@ -1,6 +1,4 @@
-from dataclasses import dataclass
 from enum import Enum
-from typing import List
 
 
 class TossUpBonus(Enum):
@@ -23,15 +21,17 @@ class TossUpBonus(Enum):
         """
 
         _ALIASES = {
-            TossUpBonus.TOSS_UP: ("TOSS-UP", "TU"),
-            TossUpBonus.BONUS: ("BONUS", "B"),
-            TossUpBonus.VISUAL_BONUS: ("VISUAL BONUS", "VB"),
+            "tu": TossUpBonus.TOSS_UP,
+            "toss-up": TossUpBonus.TOSS_UP,
+            "b": TossUpBonus.BONUS,
+            "bonus": TossUpBonus.BONUS,
+            "vb": TossUpBonus.VISUAL_BONUS,
+            "visual bonus": TossUpBonus.VISUAL_BONUS,
         }
-        for enum_type in _ALIASES.keys():
-            if label.upper() in _ALIASES[enum_type]:
-                return enum_type
-        else:
-            raise ValueError(f"{label} is not a valid TossUpBonus")
+        try:
+            return _ALIASES[label.lower()]
+        except KeyError:
+            return TossUpBonus(label)
 
 
 class Subject(Enum):
@@ -100,51 +100,6 @@ class QuestionType(Enum):
                 return enum_type
         else:
             raise ValueError(f"{label} is not a valid Subject")
-
-
-@dataclass
-class ScienceBowlQuestion:
-    """Class containing all fields describing a Science Bowl question."""
-
-    tu_b: TossUpBonus
-    subject: Subject
-    question_type: QuestionType
-    stem: str
-    choices: List[str]
-    answer: str
-
-    question_set: str = "N/A"
-    round: str = "N/A"
-    q_letter: str = "N/A"
-
-    LOD: int = 0
-    source: str = "Unknown"
-    author: str = "Unknown"
-    comments: str = ""
-    ID: int = 0
-
-    def __post_init__(self):
-        if not isinstance(self.tu_b, TossUpBonus):
-            self.tu_b = TossUpBonus.from_string(self.tu_b)
-
-        if not isinstance(self.subject, Subject):
-            self.subject = Subject.from_string(self.subject)
-
-        if not isinstance(self.question_type, QuestionType):
-            self.question_type = QuestionType.from_string(self.question_type)
-
-    def join_choices(self, choices):
-        newline = "\n"
-        if self.question_type is QuestionType.SHORT_ANSWER:
-            if choices == []:
-                return ""
-            else:
-                return " ".join([f"{idx + 1}) {v}" for idx, v in enumerate(choices)])
-        else:
-            wxyz = ("W)", "X)", "Y)", "Z)")
-            return f"{newline}".join(
-                [f"{wxyz[idx]} {v}" for idx, v in enumerate(choices)]
-            )
 
 
 class ErrorLogger:
