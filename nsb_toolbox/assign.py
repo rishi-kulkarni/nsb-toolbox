@@ -3,9 +3,9 @@ from typing import Generator, List
 
 import docx.table
 import docx.document
+import numpy as np
 
 from .yamlparsers import config_to_question_list
-from .importers import validate_path, load_doc, load_yaml
 from .classes import QuestionType, TossUpBonus
 
 
@@ -13,12 +13,12 @@ from .classes import QuestionType, TossUpBonus
 class EditedQuestions:
     document: docx.document.Document
 
-    sets: List[docx.table._Cell] = field(init=False)
-    tubs: List[docx.table._Cell] = field(init=False)
-    difficulties: List[docx.table._Cell] = field(init=False)
-    qtypes: List[docx.table._Cell] = field(init=False)
-    subcategories: List[docx.table._Cell] = field(init=False)
+    tubs: List[TossUpBonus] = field(init=False)
+    difficulties: List[int] = field(init=False)
+    qtypes: List[QuestionType] = field(init=False)
+    subcategories: List[str] = field(init=False)
 
+    sets: List[docx.table._Cell] = field(init=False)
     rounds: List[docx.table._Cell] = field(init=False)
     qletters: List[docx.table._Cell] = field(init=False)
 
@@ -28,23 +28,30 @@ class EditedQuestions:
         col_count = self.document.tables[0]._column_count
 
         # this field can take on any value, so just load it in as a list of strings
-        self.subcategories = [
-            cells[i].text for i in _col_iter(12, len(cells), col_count)
-        ]
+        self.subcategories = np.array(
+            [cells[i].text for i in _col_iter(12, len(cells), col_count)], dtype="<U20"
+        )
 
         # these fields are all validated, as they can only take on specific values
         try:
 
-            self.tubs = [
-                TossUpBonus(cells[i].text) for i in _col_iter(0, len(cells), col_count)
-            ]
-            self.difficulties = [
-                int(cells[i].text) for i in _col_iter(3, len(cells), col_count)
-            ]
-            self.qtypes = [
-                QuestionType(cells[i].paragraphs[0].runs[0].text)
-                for i in _col_iter(2, len(cells), col_count)
-            ]
+            self.tubs = np.array(
+                [
+                    TossUpBonus(cells[i].text).value
+                    for i in _col_iter(0, len(cells), col_count)
+                ],
+                dtype="<U20",
+            )
+            self.difficulties = np.array(
+                [int(cells[i].text) for i in _col_iter(3, len(cells), col_count)]
+            )
+            self.qtypes = np.array(
+                [
+                    QuestionType(cells[i].paragraphs[0].runs[0].text).value
+                    for i in _col_iter(2, len(cells), col_count)
+                ],
+                dtype="<U20",
+            )
 
         except ValueError as ex:
             raise ValueError(
@@ -63,6 +70,45 @@ class EditedQuestions:
             raise ValueError(
                 "The Round and Q Letter columns are not empty in this document."
             )
+
+
+@dataclass
+class ParsedQuestionSpec:
+    config_yaml: dict
+
+    tubs: List[TossUpBonus] = field(init=False)
+    difficulties: List[int] = field(init=False)
+    qtypes: List[QuestionType] = field(init=False)
+    subcategories: List[str] = field(init=False)
+
+    sets: List[str] = field(init=False)
+    rounds: List[str] = field(init=False)
+    qletters: List[str] = field(init=False)
+
+    def __post_init__(self):
+        q_list = config_to_question_list(self.config_yaml)
+
+        self.tubs = np.empty(len(q_list), dtype="<U20")
+        self.difficulties = np.empty(len(q_list), dtype=int)
+        self.qtypes = np.empty(len(q_list), dtype="<U20")
+        self.subcategories = np.empty(len(q_list), dtype="<U20")
+
+        self.sets = np.empty(len(q_list), dtype="<U20")
+        self.rounds = np.empty(len(q_list), dtype="<U20")
+        self.qletters = np.empty(len(q_list), dtype="<U20")
+
+        for idx, question in enumerate(q_list):
+
+            self.tubs[idx] = question.tub.value
+            self.difficulties[idx] = question.difficulty
+            self.qtypes[idx] = question.qtype.value if question.qtype else ""
+            self.subcategories[idx] = (
+                question.subcategory if question.subcategory else ""
+            )
+
+            self.sets[idx] = question.set
+            self.rounds[idx] = question.round
+            self.qletters[idx] = question.letter
 
 
 def _col_iter(
