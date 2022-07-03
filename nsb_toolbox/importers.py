@@ -1,18 +1,12 @@
-from typing import Generator
-import zipfile
-import xml.etree.ElementTree
-import os
-import argparse
+from pathlib import Path
+from typing import Union, Dict
 
-WORD_NAMESPACE = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-PARA = WORD_NAMESPACE + "p"
-TEXT = WORD_NAMESPACE + "t"
-TABLE = WORD_NAMESPACE + "tbl"
-ROW = WORD_NAMESPACE + "tr"
-CELL = WORD_NAMESPACE + "tc"
+from docx.document import Document as DocClass
+from docx import Document
+import yaml
 
 
-def validate_path(path_string: str) -> str:
+def validate_path(path_string: Union[str, Path]) -> Path:
     """Validates that incoming path exists.
 
     Parameters
@@ -21,71 +15,39 @@ def validate_path(path_string: str) -> str:
 
     Returns
     -------
-    path_string
+    path: Path
 
     Raises
     ------
     FileNotFoundError
 
     """
-    if os.path.exists(path_string):
-        return path_string
+    path = Path(path_string)
+    if path.exists():
+        return path
     else:
         raise FileNotFoundError(f"No such file: {path_string}")
 
 
-def docx_to_stream(path_to_docx: str) -> Generator:
-    """Generator that reads a formatted Science Bowl round and yields XML paragraph objects.
+def load_yaml(path: Union[Path, str]) -> Dict:
+    """Parses a yaml files and returns a YAML representation object.
 
     Parameters
     ----------
-    path_to_docx : str
+    path : Path
 
     Returns
     -------
-    Generator
+    Dict
+
     """
+    path = validate_path(path)
 
-    with zipfile.ZipFile(path_to_docx) as docx:
-        tree = xml.etree.ElementTree.XML(docx.read("word/document.xml"))
-
-    for paragraph in tree.iter(PARA):
-        yield "".join(list(paragraph.itertext()))
-
-
-def text_to_stream(path_to_txt: str) -> Generator:
-    """Generator that reads an unformatted Science Bowl text file and yields lines.
-
-    Parameters
-    ----------
-    path_to_txt : str
-
-    Yields
-    -------
-    Generator
-    """
-    with open(path_to_txt) as file:
-        for row in file:
-            yield row.strip()
+    with open(path) as file:
+        data = yaml.safe_load(file)
+        return data
 
 
-if __name__ == "__main__":
-
-    argparser = argparse.ArgumentParser(
-        description="Parser for Science Bowl .docx files."
-    )
-    argparser.add_argument(
-        "path",
-        metavar="path",
-        type=str,
-        help="path to the Science Bowl docx file",
-    )
-
-    args = argparser.parse_args()
-
-    path_to_data = validate_path(args.path)
-
-    if path_to_data.endswith(".docx"):
-        raw_text = docx_to_stream(path_to_data)
-    elif path_to_data.endswith(".txt"):
-        raw_text = text_to_stream(path_to_data)
+def load_doc(path: Union[Path, str]) -> DocClass:
+    path = validate_path(path)
+    return Document(path)

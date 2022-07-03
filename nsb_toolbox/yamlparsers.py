@@ -2,11 +2,9 @@ import collections.abc
 import itertools
 from copy import deepcopy
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, Generator, List, Optional, Union
+from typing import Dict, Generator, List, Optional
 
 import numpy as np
-import yaml
 
 from .classes import QuestionType, TossUpBonus
 
@@ -54,32 +52,6 @@ class SetConfig:
 
         if isinstance(self.Rounds, int):
             self.Rounds = [self.Rounds]
-
-
-def load_yaml(path: Union[Path, str]) -> Dict:
-    """Parses a yaml files and returns a YAML representation object.
-
-    Parameters
-    ----------
-    path : Path
-
-    Returns
-    -------
-    strictyaml.YAML
-
-    Raises
-    ------
-    FileNotFoundError
-    """
-    if isinstance(path, str):
-        path = Path(path)
-
-    if path.exists():
-        with open(path) as file:
-            data = yaml.safe_load(file)
-            return data
-    else:
-        raise FileNotFoundError(f"no such file: {path}")
 
 
 def config_to_question_list(config: Dict) -> List[QuestionDetails]:
