@@ -46,14 +46,14 @@ subcommands:
 ## nsb format
 ```nsb format``` provides two functions in one - first, it is a formatter than ensures Science Bowl questions are properly spaced (four spaces between question type and start of stem, blank line between stem and answer, etc). Second, it is a linter that highlights questions that it cannot fix. It is important to note that ```nsb format``` cannot catch every problem with the question! For example, ```nsb format``` will never be able to check question content for correctness. All ```nsb format``` can do is eliminate or highlight typical formatting errors.
 
-## Usage
+### Usage
 
 ```nsb format``` takes a single argument, the path to the target .docx file. For example:
 
 ```nsb format path/to/nsb/questions.docx```
 
 <a name="auto-format"></a>
-## Auto-Formatting
+### Auto-Formatting
 
 ```nsb format``` outright fixes a number of formatting errors. It strives to produce questions that have the following characteristics:
 
@@ -93,7 +93,7 @@ The mislabeled choices will be automatically corrected. Note that an answer line
 ![After Multiple Choice Correction](/docs/images/after_mc_correct.png)
 
 <a name="linting"></a>
-## Linting
+### Linting
 
 If ```nsb format``` fails to parse a cell, it will raise linting errors by highlighting the question and printing the error in the command line. There are two levels of errors: parsing errors, which will highlight a cell red, and question structure errors, which will highlight the problematic structure yellow. `nsb format` searches for the following errors:
 
