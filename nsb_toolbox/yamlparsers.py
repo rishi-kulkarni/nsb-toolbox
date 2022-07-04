@@ -2,11 +2,15 @@ import collections.abc
 import itertools
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Dict, Generator, List, Optional
+from functools import cached_property
+from pathlib import Path
+from typing import Dict, Generator, List, Optional, Union
+from typing_extensions import Self
 
 import numpy as np
 
 from .classes import QuestionType, TossUpBonus
+from .importers import load_yaml
 
 
 @dataclass
@@ -52,6 +56,115 @@ class SetConfig:
 
         if isinstance(self.Rounds, int):
             self.Rounds = [self.Rounds]
+
+
+@dataclass(frozen=True)
+class ParsedQuestionSpec:
+    """Specification that describes the constraints upon each question in each round.
+
+    Attributes
+    ----------
+    config : ShuffleConfig
+        Configuration information
+    question_list : List[QuestionDetails]
+        Full list of questions. Each of the following properties refers to an array of
+        attributes of the QuestionDetail instances in question_list.
+    tubs : np.ndarray[str]
+    difficulties : np.ndarray[int]
+    qtypes : np.ndarray[str]
+    subcategories : np.ndarray[str]
+    sets : np.ndarray[str]
+    rounds : np.ndarray[str]
+    qletters : np.ndarray[str]
+
+    Methods
+    -------
+    from_yaml_dict(yaml_config: Dict)
+        Generates a class instance from a dictionary
+    from_yaml_path(path: Union[Path, str])
+        Generates a class instance from a path to a .yaml file.
+
+    """
+
+    config: ShuffleConfig
+    question_list: List[QuestionDetails]
+
+    @cached_property
+    def tubs(self) -> np.ndarray:
+        return np.array([question.tub.value for question in self.question_list])
+
+    @cached_property
+    def difficulties(self) -> np.ndarray:
+        return np.array([question.difficulty for question in self.question_list])
+
+    @cached_property
+    def qtypes(self) -> np.ndarray:
+        return np.array(
+            [
+                question.qtype.value if question.qtype else ""
+                for question in self.question_list
+            ]
+        )
+
+    @cached_property
+    def subcategories(self) -> np.ndarray:
+        return np.array(
+            [
+                question.subcategory if question.subcategory else ""
+                for question in self.question_list
+            ]
+        )
+
+    @cached_property
+    def sets(self) -> np.ndarray:
+        return np.array([question.set for question in self.question_list])
+
+    @cached_property
+    def rounds(self) -> np.ndarray:
+        return np.array([question.round for question in self.question_list])
+
+    @cached_property
+    def qletters(self) -> np.ndarray:
+        return np.array([question.letter for question in self.question_list])
+
+    @classmethod
+    def from_yaml_dict(cls, yaml_config: Dict) -> Self:
+        """Parses a round specification config and returns an instance of this dataclass.
+
+        Parameters
+        ----------
+        yaml_config : Dict
+
+        Returns
+        -------
+        ParsedQuestionSpec
+        """
+        shuffle_config = _parse_shuffle(yaml_config["Shuffle"])
+        round_definitions = yaml_config["Round Definitions"]
+
+        parsed_sets = parse_sets(yaml_config["Sets"], round_definitions)
+
+        question_list = list(
+            generate_questions(parsed_sets=parsed_sets, shuffle_config=shuffle_config)
+        )
+
+        return cls(config=shuffle_config, question_list=question_list)
+
+    @classmethod
+    def from_yaml_path(cls, path: Union[Path, str]) -> Self:
+        """Parses a round specification config located at path and returns an instance
+        of this dataclass.
+
+        Parameters
+        ----------
+        path : Union[Path, str]
+
+        Returns
+        -------
+        ParsedQuestionSpec
+        """
+        yaml_dict = load_yaml(path=path)
+        return cls.from_yaml_dict(yaml_dict)
 
 
 def config_to_question_list(config: Dict) -> List[QuestionDetails]:
