@@ -1,7 +1,10 @@
-Shuffle:
-  Subcategory: False # shuffles subcategories between toss-up and bonus
-  LOD: False # shuffles difficulties within each round
-  Seed: ~
+Configuration:
+  Shuffle Subcategory: False # shuffles subcategories between toss-up and bonus
+  Shuffle Pairs: False # shuffles the order pairs appear in each round
+  Shuffle LOD: False
+  Random Seed: ~
+  Subcategory Mismatch Penalty: 1
+  Preferred Writers: ["Chen, Andrew", "Kulkarni, Rishi"]
 
 Round Definitions:
   RoundRobin:

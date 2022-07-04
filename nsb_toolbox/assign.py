@@ -1,6 +1,6 @@
-from functools import cached_property
+from functools import cached_property, reduce
 from pathlib import Path
-from typing import Generator, List, Optional, Union
+from typing import Generator, List, Union
 from typing_extensions import Self
 
 import docx.table
@@ -106,9 +106,7 @@ class EditedQuestions:
         """
         self._validate()
 
-        cost_matrix = build_cost_matrix(
-            questions=self, spec=question_spec, rng=question_spec.config.rng
-        )
+        cost_matrix = build_cost_matrix(questions=self, spec=question_spec)
 
         q_assignments, round_assignments = linear_sum_assignment(cost_matrix)
         assignment_costs = cost_matrix[q_assignments, round_assignments]
@@ -134,7 +132,7 @@ class EditedQuestions:
     def difficulties(self) -> np.ndarray:
         return np.array(
             [
-                int(self._cells[i].text)
+                int(self._cells[i].text or -1)
                 for i in _col_iter(3, len(self._cells), self._col_count)
             ]
         )
@@ -157,6 +155,16 @@ class EditedQuestions:
                 for i in _col_iter(12, len(self._cells), self._col_count)
             ],
             dtype="<U20",
+        )
+
+    @cached_property
+    def writers(self) -> np.ndarray:
+        return np.array(
+            [
+                self._cells[i].text
+                for i in _col_iter(8, len(self._cells), self._col_count)
+            ],
+            dtype="<U100",
         )
 
     @property
@@ -221,7 +229,6 @@ class EditedQuestions:
 def build_cost_matrix(
     questions: EditedQuestions,
     spec: ParsedQuestionSpec,
-    rng: Optional[np.random.Generator] = None,
 ) -> np.ndarray:
     """Computes a cost matrix for assigning a set of Science Bowl questions to a
     given question specification.
@@ -230,8 +237,6 @@ def build_cost_matrix(
     ----------
     questions : EditedQuestions
     spec : ParsedQuestionSpec
-    rng : np.random.Generator, optional
-        PRNG used to generate random noise before assignment.
 
 
     Returns
@@ -240,45 +245,85 @@ def build_cost_matrix(
         Cost matrix with questions represented by rows and slots by columns.
     """
     # randomness, can be seeded in the config file
-    if rng is None:
-        rng = np.random.default_rng()
 
-    random_matrix = rng.uniform(
+    random_matrix = spec.config.rng.uniform(
         0,
         0.0001,
         size=(questions.difficulties.size, spec.difficulties.size),
     )
 
     # squared loss for difficulties
-    diff_matrix = (spec.difficulties - questions.difficulties[:, None]) ** 2
+    diff_matrix = (spec.difficulties - questions.difficulties[:, np.newaxis]) ** 2
 
     # penalize subcategory mismatches
-    # TODO: this penalty should be parameterized in the config
     subcat_matrix = np.where(
-        (spec.subcategories != questions.subcategories[:, None])
+        (spec.subcategories != questions.subcategories[:, np.newaxis])
         & (spec.subcategories != ""),
-        1,
+        spec.config.subcat_mismatch_penalty,
         0,
     )
 
-    cost_matrix = random_matrix + diff_matrix + subcat_matrix
+    # penalize unpreferred writers
+    if spec.config.preferred_writers:
+        writer_matrix = np.where(
+            (
+                questions.writers[:, np.newaxis]
+                != np.array(spec.config.preferred_writers)
+            ).all(axis=1),
+            0.1,
+            0,
+        )[:, np.newaxis]
+    else:
+        writer_matrix = np.zeros_like(diff_matrix)
 
-    # mask to indicate where toss-up/bonus do not match
-    tub_mask = spec.tubs != questions.tubs[:, None]
-    # mask to indicate where Short Answer/Multiple Choice do not match
-    qtype_mask = (spec.qtypes != questions.qtypes[:, None]) & (spec.qtypes != "")
-    # mask to indicate where Sets are compatible
-    q_sets = np.array([x.text for x in questions.sets])[:, None]
-    # each doc should represent one packet, so this throws an error if we get more
-    # than one.
-    (packet,) = np.unique([x.split("-")[0] for x in spec.sets])
-    set_mask = (spec.sets != q_sets) & (q_sets != packet)
-
-    # anywhere
-    mask = tub_mask | qtype_mask | set_mask
-    cost_matrix[mask] = 1_000_000
+    cost_matrix = random_matrix + diff_matrix + subcat_matrix + writer_matrix
+    invalid_assignments = invalid_assignment_mask(questions, spec)
+    # invalid assignments need a finite but large cost
+    cost_matrix[invalid_assignments] = 1_000_000
 
     return cost_matrix
+
+
+def invalid_assignment_mask(
+    questions: EditedQuestions, spec: ParsedQuestionSpec
+) -> np.ndarray:
+    """Applies the following rules to ensure that no invalid assignments are made:
+
+    1. Questions with missing values in the LOD column cannot be assigned.
+    2. TOSS-UP or BONUS markings should be respected.
+    3. If a question must be Short Answer, it should not have a Multiple Choice
+        question assigned to it.
+    4. If a question is marked with the "B" set, it should not be assigned to the
+        "A" set. However, questions that lack an "-A" or "-B" masking can be
+        assigned to either set.
+
+    Parameters
+    ----------
+    questions : EditedQuestions
+    spec : ParsedQuestionSpec
+
+    Returns
+    -------
+    np.ndarray
+        2D Boolean mask for the cost matrix where True indicates an invalid assignment.
+    """
+    masks = []
+    # mask to indicate where question LODs are missing
+    masks.append(questions.difficulties[:, np.newaxis] == -1)
+
+    # mask to indicate where toss-up/bonus do not match
+    masks.append(spec.tubs != questions.tubs[:, np.newaxis])
+
+    # mask to indicate where Short Answer/Multiple Choice do not match
+    masks.append((spec.qtypes != questions.qtypes[:, np.newaxis]) & (spec.qtypes != ""))
+
+    # mask to indicate where Sets match, if the question has a Set indicated
+    q_sets = np.array([x.text for x in questions.sets])[:, np.newaxis]
+    packets = np.unique([x.split("-")[0] for x in spec.sets])
+    masks.append((spec.sets != q_sets) & (q_sets != packets).all(axis=1)[:, np.newaxis])
+
+    # apply all masks
+    return reduce(np.logical_or, masks)
 
 
 def _col_iter(

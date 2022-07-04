@@ -33,14 +33,14 @@ class QuestionDetails:
 
 
 @dataclass
-class ShuffleConfig:
-    subcategory: bool
-    difficulty: bool
+class Config:
+    shuffle_subcategory: bool
+    shuffle_pairs: bool
+    shuffle_difficulty: bool
     rng: np.random.Generator
 
-    def __post_init__(self):
-        if not isinstance(self.rng, np.random.Generator):
-            self.rng = np.random.default_rng(self.rng)
+    subcat_mismatch_penalty: float
+    preferred_writers: List[str]
 
 
 @dataclass
@@ -86,7 +86,7 @@ class ParsedQuestionSpec:
 
     """
 
-    config: ShuffleConfig
+    config: Config
     question_list: List[QuestionDetails]
 
     @cached_property
@@ -139,13 +139,13 @@ class ParsedQuestionSpec:
         -------
         ParsedQuestionSpec
         """
-        shuffle_config = _parse_shuffle(yaml_config["Shuffle"])
+        shuffle_config = _parse_config(yaml_config["Configuration"])
         round_definitions = yaml_config["Round Definitions"]
 
         parsed_sets = parse_sets(yaml_config["Sets"], round_definitions)
 
         question_list = list(
-            generate_questions(parsed_sets=parsed_sets, shuffle_config=shuffle_config)
+            generate_questions(parsed_sets=parsed_sets, config=shuffle_config)
         )
 
         return cls(config=shuffle_config, question_list=question_list)
@@ -168,7 +168,7 @@ class ParsedQuestionSpec:
 
 
 def generate_questions(
-    parsed_sets: Dict, shuffle_config: ShuffleConfig
+    parsed_sets: Dict, config: Config
 ) -> Generator[QuestionDetails, None, None]:
     """Generates QuestionDetails instances based on a parsed set of
     Science Bowl round descriptions and a ShuffleConfig instance.
@@ -201,14 +201,19 @@ def generate_questions(
             template = set_config.Template[q_tub]
             difficulties = template.get("LOD")
             subcategories = template.get("Subcategory", [None for e in difficulties])
-            q_types = [None for e in difficulties[:-1]] + ["Short Answer"]
             q_letters = [chr(i) for i in range(ord("A"), ord("A") + len(difficulties))]
 
-            if shuffle_config.difficulty:
-                shuffle_config.rng.shuffle(difficulties)
+            if config.shuffle_difficulty:
+                config.rng.shuffle(difficulties)
 
-            if shuffle_config.subcategory:
-                shuffle_config.rng.shuffle(subcategories)
+            if config.shuffle_pairs:
+                config.rng.shuffle(q_letters)
+
+            if config.shuffle_subcategory:
+                config.rng.shuffle(subcategories)
+
+            q_types = [None for e in difficulties]
+            q_types[np.argmax(q_letters)] = QuestionType.SHORT_ANSWER.value
 
             for lod, subcat, q_type, q_letter in itertools.zip_longest(
                 difficulties, subcategories, q_types, q_letters, fillvalue=None
@@ -224,13 +229,16 @@ def generate_questions(
                 )
 
 
-def _parse_shuffle(shuffle_config):
+def _parse_config(config: Dict) -> Config:
     """Helper function that parses the "Shuffle" portion of the
     configuration dictionary."""
-    return ShuffleConfig(
-        subcategory=shuffle_config["Subcategory"],
-        difficulty=shuffle_config["LOD"],
-        rng=shuffle_config.get("Seed", None),
+    return Config(
+        shuffle_subcategory=config.get("Shuffle Subcategory", False),
+        shuffle_pairs=config.get("Shuffle Pairs", False),
+        shuffle_difficulty=config.get("Shuffle LOD", False),
+        rng=np.random.default_rng(config.get("Random Seed", None)),
+        subcat_mismatch_penalty=config.get("Subcategory Mismatch Penalty", 1.0),
+        preferred_writers=config.get("Preferred Writers", [None]),
     )
 
 
