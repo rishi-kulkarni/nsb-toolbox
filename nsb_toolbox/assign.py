@@ -62,10 +62,63 @@ class EditedQuestions:
                 ex,
             )
 
+    def save(self, path: Union[Path, str]):
+        """Saves the wrapped document to path.
+
+        Parameters
+        ----------
+        path : Union[Path, str]
+        """
+        self.document.save(path)
+
     @classmethod
     def from_docx_path(cls, path: Union[Path, str]) -> Self:
+        """Generates a class instance from a path to a docx file.
+
+        Parameters
+        ----------
+        path : Union[Path, str]
+
+        Returns
+        -------
+        EditedQuestions
+        """
         doc = load_doc(path)
         return cls(doc)
+
+    def assign(self, question_spec: ParsedQuestionSpec):
+        """Attempts to find a valid assignment of the questions to question_spec via a
+        linear sum assignment. Upon success, writes the successful assignment to the
+        question document. Otherwise, notifies the user which parts of the specification
+        could not be met.
+
+        Parameters
+        ----------
+        question_spec : ParsedQuestionSpec
+            Question specification read from a config file.
+
+        Raises
+        ------
+        ValueError
+            Raised if the questions cannot meet the given specification. Prints
+            the specifications that cannot be met so that the SME can find appropriate
+            questions.
+        """
+        self._validate()
+
+        cost_matrix = build_cost_matrix(
+            questions=self, spec=question_spec, rng=question_spec.config.rng
+        )
+
+        q_assignments, round_assignments = linear_sum_assignment(cost_matrix)
+        assignment_costs = cost_matrix[q_assignments, round_assignments]
+
+        if assignment_costs.sum() > 1_000_000:
+            self._raise_assignment_failure(question_spec, assignment_costs)
+
+        else:
+            print("Found a successful set of assignments!")
+            self._write_assignment(question_spec, q_assignments, round_assignments)
 
     @cached_property
     def tubs(self) -> np.ndarray:
@@ -117,40 +170,6 @@ class EditedQuestions:
     @property
     def qletters(self) -> List[docx.table._Cell]:
         return [self._cells[i] for i in _col_iter(7, len(self._cells), self._col_count)]
-
-    def assign(self, question_spec: ParsedQuestionSpec):
-        """Attempts to find a valid assignment of the questions to question_spec via a
-        linear sum assignment. Upon success, writes the successful assignment to the
-        question document. Otherwise, notifies the user which parts of the specification
-        could not be met.
-
-        Parameters
-        ----------
-        question_spec : ParsedQuestionSpec
-            Question specification read from a config file.
-
-        Raises
-        ------
-        ValueError
-            Raised if the questions cannot meet the given specification. Prints
-            the specifications that cannot be met so that the SME can find appropriate
-            questions.
-        """
-        self._validate()
-
-        cost_matrix = build_cost_matrix(
-            questions=self, spec=question_spec, rng=question_spec.config.rng
-        )
-
-        q_assignments, round_assignments = linear_sum_assignment(cost_matrix)
-        assignment_costs = cost_matrix[q_assignments, round_assignments]
-
-        if assignment_costs.sum() > 1_000_000:
-            self._raise_assignment_failure(question_spec, assignment_costs)
-
-        else:
-            print("Found a successful set of assignments!")
-            self._write_assignment(question_spec, q_assignments, round_assignments)
 
     def _write_assignment(
         self,
@@ -211,6 +230,9 @@ def build_cost_matrix(
     ----------
     questions : EditedQuestions
     spec : ParsedQuestionSpec
+    rng : np.random.Generator, optional
+        PRNG used to generate random noise before assignment.
+
 
     Returns
     -------
@@ -262,6 +284,24 @@ def build_cost_matrix(
 def _col_iter(
     col_num: int, total_cells: int, col_count: int, skip_header: bool = True
 ) -> Generator[int, None, None]:
+    """Convenience function to build iterators over columns in a table.
+
+    Parameters
+    ----------
+    col_num : int
+        Column number to iterate over, indexing starts at 0.
+    total_cells : int
+        Total number of cells in the table.
+    col_count : int
+        Number of columns in the table.
+    skip_header : bool, optional
+        If true, the iterator will skip the first instance, by default True
+
+    Yields
+    ------
+    Generator[int, None, None]
+        range generator that yields cell indexes for the column of interest.
+    """
     if skip_header:
         return range(col_num + col_count, total_cells, col_count)
     else:

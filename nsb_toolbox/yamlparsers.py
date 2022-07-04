@@ -167,30 +167,6 @@ class ParsedQuestionSpec:
         return cls.from_yaml_dict(yaml_dict)
 
 
-def config_to_question_list(config: Dict) -> List[QuestionDetails]:
-    """Converts a configuration dictionary into a list of QuestionDetails
-    specifications.
-
-    Parameters
-    ----------
-    config : Dict
-        Dictionary loaded from a yaml config using `load_yaml`.
-
-    Returns
-    -------
-    List[QuestionDetails]
-        Complete question specification for the config file.
-    """
-    shuffle_config = _parse_shuffle(config["Shuffle"])
-    round_definitions = config["Round Definitions"]
-
-    parsed_sets = parse_sets(config["Sets"], round_definitions)
-
-    return list(
-        generate_questions(parsed_sets=parsed_sets, shuffle_config=shuffle_config)
-    )
-
-
 def generate_questions(
     parsed_sets: Dict, shuffle_config: ShuffleConfig
 ) -> Generator[QuestionDetails, None, None]:
