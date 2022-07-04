@@ -22,7 +22,7 @@ class TestParsedQuestionSpec(TestCase):
 
     def test_simple_config(self):
         config = {
-            "Shuffle": {"Subcategory": False, "LOD": False},
+            "Configuration": {"Shuffle Subcategory": False, "Shuffle LOD": False},
             "Round Definitions": {"Tiebreakers": {"TU": {"LOD": [2]}}},
             "Sets": [
                 {
@@ -59,7 +59,11 @@ class TestParsedQuestionSpec(TestCase):
 
     def test_shuffled_config(self):
         config = {
-            "Shuffle": {"Subcategory": True, "LOD": True, "Seed": 2},
+            "Configuration": {
+                "Shuffle Subcategory": True,
+                "Shuffle LOD": True,
+                "Random Seed": 2,
+            },
             "Round Definitions": {"Tiebreakers": {"TU": {"LOD": [2, 1, 3]}}},
             "Sets": [
                 {

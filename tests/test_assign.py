@@ -17,38 +17,41 @@ class TestEditedQuestions(TestCase):
         self.instance = EditedQuestions(test_doc)
 
     def test_tub_field(self):
-        expected_tub = np.array(["TOSS-UP"] * 5 + ["BONUS"] * 5)
+        expected_tub = np.array(["TOSS-UP"] * 6 + ["BONUS"] * 6)
         assert_equal(self.instance.tubs, expected_tub)
 
     def test_set_field(self):
 
-        expected_sets = ["HSR-A", "HSR-B", "HSR", "HSR", "HSR"] * 2
+        expected_sets = ["HSR-A", "HSR-B", "HSR", "HSR", "HSR", "HSR"] * 2
         self.assertEqual([x.text for x in self.instance.sets], expected_sets)
 
     def test_diff_field(self):
 
-        expected_difficulties = np.array([1, 2, 3, 3, 3, 1, 2, 3, 4, 2])
+        expected_difficulties = np.array([1, 2, 3, -1, 3, 3, 1, 2, 3, 4, 2, -1])
         assert_equal(self.instance.difficulties, expected_difficulties)
 
     def test_qtypes_field(self):
         expected_qtypes = np.array(
-            ["Multiple Choice"] * 3 + ["Short Answer"] * 6 + ["Multiple Choice"]
+            ["Multiple Choice"] * 3
+            + ["Short Answer"] * 7
+            + ["Multiple Choice"]
+            + ["Short Answer"]
         )
         assert_equal(self.instance.qtypes, expected_qtypes)
 
     def test_subcat_field(self):
 
-        expected_subcategories = np.array([""] * 3 + ["Organic"] * 4 + [""] * 3)
+        expected_subcategories = np.array([""] * 4 + ["Organic"] * 4 + [""] * 4)
         assert_equal(self.instance.subcategories, expected_subcategories)
 
     def test_rounds_field(self):
 
-        expected_rounds = [""] * 10
+        expected_rounds = [""] * 12
         self.assertEqual([x.text for x in self.instance.rounds], expected_rounds)
 
     def test_qletter_field(self):
 
-        expected_qletters = [""] * 10
+        expected_qletters = [""] * 12
         self.assertEqual([x.text for x in self.instance.qletters], expected_qletters)
 
     def test_invalid_tubs(self):
