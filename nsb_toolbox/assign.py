@@ -245,7 +245,6 @@ def build_cost_matrix(
         Cost matrix with questions represented by rows and slots by columns.
     """
     # randomness, can be seeded in the config file
-
     random_matrix = spec.config.rng.uniform(
         0,
         0.0001,
