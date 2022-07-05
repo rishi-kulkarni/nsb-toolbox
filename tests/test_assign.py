@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from nsb_toolbox.assign import EditedQuestions
 from nsb_toolbox.importers import load_doc
+from nsb_toolbox.yamlparsers import ParsedQuestionSpec
 from numpy.testing import assert_equal
 
 data_dir = Path(__file__).parent / "test_data"
@@ -85,3 +86,98 @@ class TestEditedQuestionsFields:
             ValueError, match="One or more issues with the question document"
         ):
             EditedQuestions(doc)
+
+
+@pytest.fixture(params=["raw", "prefer_writers"])
+def question_spec(request):
+    spec = ParsedQuestionSpec.from_yaml_path(data_dir / "test_assign_config.yaml")
+    if request.param == "raw":
+        spec.config.shuffle_difficulty = False
+        spec.config.preferred_writers = []
+        spec.config.shuffle_pairs = False
+        spec.config.shuffle_subcategory = False
+        spec.config.subcat_mismatch_penalty = 1
+        spec.config.rng = np.random.default_rng(1)
+        return spec
+    if request.param == "prefer_writers":
+        spec.config.shuffle_difficulty = False
+        spec.config.preferred_writers = ["Chen, Andrew", "Kulkarni, Rishi"]
+        spec.config.shuffle_pairs = False
+        spec.config.shuffle_subcategory = False
+        spec.config.subcat_mismatch_penalty = 1
+        spec.config.rng = np.random.default_rng(1)
+        return spec
+
+
+class TestEditedQuestionsAssign:
+    """Tests the EditedQuestions.assign method."""
+
+    def test_assign_contract(self, question_spec, doc_path):
+        questions = EditedQuestions.from_docx_path(doc_path)
+        pre_assign_sets = [x.text for x in questions.sets]
+
+        questions.assign(question_spec)
+
+        post_assign_sets = [x.text for x in questions.sets]
+
+        # check that pre-specified sets are respected
+        for pre, post in zip(pre_assign_sets, post_assign_sets):
+            assert pre == post or pre == "HSR"
+
+        assignments = [
+            f"{tub}-{set_.text}-{rd.text}-{let.text}"
+            for tub, set_, rd, let in zip(
+                questions.tubs, questions.sets, questions.rounds, questions.qletters
+            )
+            if rd.text
+        ]
+
+        # check that each assignment is unique
+        assert len(assignments) == len(np.unique(assignments))
+
+        # check that each question in the spec was assigned
+        assert len(assignments) == len(question_spec.question_list)
+
+    def test_check_on_reassign(self, question_spec, doc_path, monkeypatch):
+
+        monkeypatch.setattr("builtins.input", lambda _: "n")
+
+        questions = EditedQuestions.from_docx_path(doc_path)
+
+        with pytest.raises(ValueError, match="Aborted!"):
+            questions.assign(question_spec)
+            questions.assign(question_spec)
+
+    def test_assign_failure(self, doc_path):
+        questions = EditedQuestions.from_docx_path(doc_path)
+
+        config_dict = {
+            "Configuration": {
+                "Shuffle Subcategory": False,
+                "Shuffle Pairs": False,
+                "Shuffle LOD": False,
+                "Random Seed": None,
+                "Subcategory Mismatch Penalty": 1,
+                "Preferred Writers": ["Chen, Andrew", "Kulkarni, Rishi"],
+            },
+            "Round Definitions": {
+                "RoundRobin": {
+                    "TU": {"LOD": [1, 2, 3, 4], "Subcategory": ["Organic", None]},
+                }
+            },
+            "Sets": [
+                {
+                    "Set": ["HSR-A", "HSR-B"],
+                    "Prefix": "RR",
+                    "Rounds": [1],
+                    "Template": "RoundRobin",
+                }
+            ],
+        }
+
+        question_spec = ParsedQuestionSpec.from_yaml_dict(config_dict)
+
+        with pytest.raises(
+            ValueError, match="Failed to assign the following questions:"
+        ):
+            questions.assign(question_spec)

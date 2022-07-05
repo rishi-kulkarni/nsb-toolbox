@@ -206,7 +206,7 @@ class EditedQuestions:
 
         _NL = "\n"
         raise ValueError(
-            "Failed to assigned the following "
+            "Failed to assign the following "
             f"questions:\n{_NL.join(failed_assignments)}"
         )
 
@@ -222,7 +222,7 @@ class EditedQuestions:
                 if user_input.lower() in ("y", "n"):
                     break
 
-            if user_input.lower == "n":
+            if user_input.lower() == "n":
                 raise ValueError("Aborted!")
 
 
