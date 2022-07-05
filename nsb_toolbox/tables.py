@@ -1,19 +1,20 @@
 import re
-from enum import Enum
-from functools import lru_cache
-from typing import Optional, Type
 from abc import ABC, abstractclassmethod
+from enum import Enum
+from functools import lru_cache, partial
+from typing import Optional, Type
 
+import docx.document
 from docx import Document
 from docx.enum.text import WD_COLOR_INDEX
 from docx.shared import Inches, Pt
 from docx.table import _Cell, _Column
 from docx.text.paragraph import Paragraph
-import docx.document
 
-from .classes import QuestionType, Subject, TossUpBonus, ErrorLogger
+from .classes import ErrorLogger, QuestionType, Subject, TossUpBonus
 from .docx_utils import (
     clear_cell,
+    column_indexer,
     copy_run_formatting,
     fuse_consecutive_runs,
     highlight_cell_text,
@@ -38,6 +39,22 @@ COL_WIDTHS = (
     1.51,
     1.44,
 )
+
+COL_MAPPING = {
+    "TUB": 0,
+    "Subj": 1,
+    "Ques": 2,
+    "LOD": 3,
+    "LOD-A": 4,
+    "Set": 5,
+    "Rd": 6,
+    "Q Letter": 7,
+    "Author": 8,
+    "ID": 9,
+    "Source": 10,
+    "Comments": 11,
+    "Subcat": 12,
+}
 
 
 class QuestionFormatterState(Enum):
@@ -114,33 +131,34 @@ def initialize_table(
     table.autofit = False
     table.allow_autofit = False
 
-    table.cell(0, 0).paragraphs[0].add_run("TUB")
-    table.cell(0, 1).paragraphs[0].add_run("Subj")
-    ques_run = table.cell(0, 2).paragraphs[0].add_run("Ques")
+    _cells = table._cells
+    _col_count = table._column_count
+
+    col_iter = partial(
+        column_indexer, total_cells=len(_cells), col_count=_col_count, skip_header=True
+    )
+
+    for col_name, col_idx in COL_MAPPING.items():
+        # add header
+        table.cell(0, col_idx).paragraphs[0].add_run(col_name)
+        table.cell(0, col_idx).width = Inches(COL_WIDTHS[col_idx])
+
+        for cell_idx in col_iter(col_idx):
+            cell = _cells[cell_idx]
+            cell.width = Inches(COL_WIDTHS[col_idx])
+
+            if col_name == "Subj" and subj is not None:
+                cell.paragraphs[0].text = subj
+            elif col_name == "Set" and set is not None:
+                cell.paragraphs[0].text = set
+            elif col_name == "Author" and name is not None:
+                cell.paragraphs[0].text = name
+
+    # ques header is italicized
+    ques_run = table.cell(0, COL_MAPPING["Ques"]).paragraphs[0].runs[0]
     ques_run.italic = True
-    table.cell(0, 3).paragraphs[0].add_run("LOD")
-    table.cell(0, 4).paragraphs[0].add_run("LOD-A")
-    table.cell(0, 5).paragraphs[0].add_run("Set")
-    table.cell(0, 6).paragraphs[0].add_run("Rd")
-    table.cell(0, 7).paragraphs[0].add_run("Q Letter")
-    table.cell(0, 8).paragraphs[0].add_run("Author")
-    table.cell(0, 9).paragraphs[0].add_run("ID")
-    table.cell(0, 10).paragraphs[0].add_run("Source")
-    table.cell(0, 11).paragraphs[0].add_run("Comments")
-    table.cell(0, 12).paragraphs[0].add_run("Subcat")
 
     make_jans_shadings(table)
-
-    for idx, column in enumerate(table.columns):
-        for cell_idx, cell in enumerate(column.cells):
-            cell.width = Inches(COL_WIDTHS[idx])
-            if cell_idx > 0:
-                if idx == 1 and subj is not None:
-                    cell.paragraphs[0].text = subj
-                elif idx == 5 and set is not None:
-                    cell.paragraphs[0].text = set
-                elif idx == 8 and name is not None:
-                    cell.paragraphs[0].text = name
 
     if path is not None:
         document.save(path)
@@ -418,6 +436,15 @@ class SubjectCellFormatter(CellFormatter):
         return self.cell
 
 
+class IdentityFormatter(CellFormatter):
+    def __init__(self, cell: _Cell, error_logger: Optional[ErrorLogger] = None):
+        self.cell = cell
+        self.error_logger = error_logger
+
+    def format(self):
+        return self.cell
+
+
 def format_column(
     nsb_table_column: _Column,
     formatter: Type[CellFormatter],
@@ -435,7 +462,7 @@ def format_column(
     -------
     _Column
     """
-    for idx, cell in enumerate(nsb_table_column.cells[1:]):
+    for idx, cell in enumerate(nsb_table_column):
         cell = preprocess_cell(cell)
         if error_logger is not None:
             error_logger.set_row(idx + 1)
@@ -460,14 +487,21 @@ def format_table(table_doc: docx.document.Document, verbosity=True):
     }
     error_logger = ErrorLogger(verbosity)
 
-    columns = {}
+    _cells = table_doc.tables[0]._cells
+    _col_count = table_doc.tables[0]._column_count
 
-    columns["TUB"] = table_doc.tables[0].columns[0]
-    columns["Subj"] = table_doc.tables[0].columns[1]
-    columns["Ques"] = table_doc.tables[0].columns[2]
+    col_iter = partial(
+        column_indexer, total_cells=len(_cells), col_count=_col_count, skip_header=True
+    )
 
-    for col_name in columns.keys():
-        format_column(columns[col_name], FORMATTERS[col_name], error_logger)
+    cols_to_format = ("TUB", "Subj", "Ques", "LOD", "Set", "Author", "Subcat")
+
+    for col_name in cols_to_format:
+        format_column(
+            [_cells[i] for i in col_iter(COL_MAPPING[col_name])],
+            FORMATTERS.get(col_name, IdentityFormatter),
+            error_logger,
+        )
 
     if len(error_logger.errors) == 0:
         print("Found no errors 😄")
