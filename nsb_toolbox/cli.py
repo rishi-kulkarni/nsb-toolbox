@@ -3,9 +3,11 @@ from pathlib import Path
 
 from docx import Document
 
+from .assign import EditedQuestions
 from .classes import Subject
 from .importers import validate_path
 from .tables import format_table, initialize_table
+from .yamlparsers import ParsedQuestionSpec
 
 
 def make(args):
@@ -25,6 +27,14 @@ def format(args):
     doc.save(path_to_data)
 
 
+def assign(args):
+    questions = EditedQuestions.from_docx_path(args.path)
+    spec = ParsedQuestionSpec.from_yaml_path(args.config)
+
+    questions.assign(spec)
+    questions.save(args.path)
+
+
 def main():
     argparser = argparse.ArgumentParser(
         description="Utilities for managing Science Bowl .docx files."
@@ -42,6 +52,7 @@ def main():
         "format", parents=[path_parser], help="format a Science Bowl file"
     )
     format_parser.set_defaults(func=format)
+
     make_parser = subparsers.add_parser(
         "make", parents=[path_parser], help="make a Science Bowl table"
     )
@@ -77,6 +88,19 @@ def main():
     )
 
     make_parser.set_defaults(func=make)
+
+    assign_parser = subparsers.add_parser(
+        "assign", parents=[path_parser], help="assign Science Bowl questions to rounds"
+    )
+    assign_parser.add_argument(
+        "-c",
+        "--config",
+        action="store",
+        type=Path,
+        required=True,
+        help="Path to yaml config",
+    )
+    assign_parser.set_defaults(func=assign)
 
     args = argparser.parse_args()
     args.func(args)
