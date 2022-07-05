@@ -2,7 +2,7 @@ import re
 from abc import ABC, abstractclassmethod
 from enum import Enum
 from functools import lru_cache, partial
-from typing import Optional, Type
+from typing import Optional, Tuple
 
 import docx.document
 from docx import Document
@@ -436,18 +436,27 @@ class SubjectCellFormatter(CellFormatter):
         return self.cell
 
 
-class IdentityFormatter(CellFormatter):
+class DifficultyFormatter(CellFormatter):
     def __init__(self, cell: _Cell, error_logger: Optional[ErrorLogger] = None):
         self.cell = cell
         self.error_logger = error_logger
 
     def format(self):
+
+        if self.cell.text:
+            try:
+                int(self.cell.text)
+            except ValueError:
+                highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
+                if self.error_logger is not None:
+                    self.error_logger.log_error("LOD should be blank or an integer.")
+
         return self.cell
 
 
 def format_column(
     nsb_table_column: _Column,
-    formatter: Type[CellFormatter],
+    formatter: Optional[CellFormatter],
     error_logger: Optional[ErrorLogger] = None,
 ) -> _Column:
     """Utility function that applies a formatter to every cell in a column.
@@ -466,14 +475,26 @@ def format_column(
         cell = preprocess_cell(cell)
         if error_logger is not None:
             error_logger.set_row(idx + 1)
-        cell_formatter = formatter(cell, error_logger)
-        if cell.text.strip() != "":
-            cell_formatter.format()
+        if cell.text.strip() != "" and formatter:
+            formatter(cell, error_logger).format()
     return nsb_table_column
 
 
-def format_table(table_doc: docx.document.Document, verbosity=True):
+def format_table(
+    table_doc: docx.document.Document, cols_to_format: Tuple[str], verbosity=True
+):
     """Formats a Word document containing a Science Bowl question table.
+
+    Specifically, this function makes sure the columns fit the following
+    criteria:
+
+    TUB: Contains only TOSS-UP or BONUS
+    Subj: Contains only one of the valid subject areas
+    Ques: Contains a properly-formatted Short Answer or Multiple Choice question
+    LOD: Contains only an integer or is blank.
+    Set: Contains no extra whitespace
+    Author: Contains no extra whitespace
+    Subcat: Contains no extra whitespace
 
     Parameters
     ----------
@@ -484,6 +505,7 @@ def format_table(table_doc: docx.document.Document, verbosity=True):
         "TUB": TuBCellFormatter,
         "Subj": SubjectCellFormatter,
         "Ques": QuestionCellFormatter,
+        "LOD": DifficultyFormatter,
     }
     error_logger = ErrorLogger(verbosity)
 
@@ -494,12 +516,10 @@ def format_table(table_doc: docx.document.Document, verbosity=True):
         column_indexer, total_cells=len(_cells), col_count=_col_count, skip_header=True
     )
 
-    cols_to_format = ("TUB", "Subj", "Ques", "LOD", "Set", "Author", "Subcat")
-
     for col_name in cols_to_format:
         format_column(
             [_cells[i] for i in col_iter(COL_MAPPING[col_name])],
-            FORMATTERS.get(col_name, IdentityFormatter),
+            FORMATTERS.get(col_name, None),
             error_logger,
         )
 

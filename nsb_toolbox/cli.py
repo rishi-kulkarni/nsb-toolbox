@@ -20,10 +20,13 @@ def make(args):
 
 
 def format(args):
+
+    cols_to_format = ("TUB", "Subj", "Ques", "LOD", "Set", "Author", "Subcat")
+
     path_to_data = validate_path(args.path)
     doc = Document(path_to_data)
 
-    format_table(doc)
+    format_table(doc, cols_to_format)
     doc.save(path_to_data)
 
 
