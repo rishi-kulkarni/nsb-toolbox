@@ -2,7 +2,7 @@
 
 ## A command-line utility for formatting Science Bowl questions
 
-Version 0.3 - Updated for 2023 NSB
+Version 0.4 - Updated for 2023 NSB
 
 The NSB Toolbox contains a set of tools to make it easier to write and edit Science Bowl questions. It ensures that questions are compliant with the official Science Bowl format, allowing writers to focus on just writing the questions. It also highlights common formatting errors for editors, allowing them to focus on checking content without worrying that they're missing formatting issues here and there.
 
@@ -13,6 +13,8 @@ The NSB Toolbox contains a set of tools to make it easier to write and edit Scie
     1. [nsb format](#nsb-format)
         1. [Auto-Formatting](#auto-format)
         2. [Linting](#linting)
+    2. [nsb assign](#nsb-assign)
+        1. [Sample Configuration](#assign-config)
     3. [nsb make](#nsb-make)
 3. [Known Issues](#known-issues)
 
@@ -114,6 +116,178 @@ Question 7: Question type is MC, but has no choices.
 ```
 
 ```nsb format``` is not capable of deleting lines that contain text. This is intentional - while there are errors that ```nsb format```  highlights that it could probably fix automatically, the maintainer believes it is more prudent to leave whitespace formatting to ```nsb format``` and making any other changes by hand.
+
+<a name="nsb-assign"></a>
+## nsb assign
+`nsb assign` uses a set of configuration options to automatically assign a set of edited questions to rounds. 
+
+### Usage
+
+```nsb assign``` takes two arguments, the path to the edited set of Science Bowl questions and the path to the configuration file. For example:
+
+```nsb assign path/to/nsb/questions.docx -c path/to/config.yaml```
+
+<a name="assign-config"></a>
+### Sample Configuration File
+
+Below is a sample configuration file for a High School Regional set. The sections are explained in more detail further below.
+
+```yaml
+Configuration:
+  Shuffle Subcategory: True 
+  Shuffle Pairs: False 
+  Shuffle LOD: False
+  Random Seed: ~
+  Subcategory Mismatch Penalty: 1
+  Preferred Writers: []
+
+Round Definitions:
+  Tiebreakers:
+    TU:
+      LOD: [2]
+
+  RoundRobin:
+    TU:
+      LOD: [1, 1, 1, 1]
+      Subcategory: [Organic, ~, ~, ~]
+
+    B:
+      LOD: [1, 1, 1, 1]
+      Subcategory: [Organic, ~, ~, ~]
+
+  DoubleElim1-4:
+    TU:
+      LOD: [2, 2, 2, 2]
+
+    B:
+      LOD: [2, 2, 2, 2]
+
+  DoubleElim5-6:
+    TU:
+      LOD: [2, 2, 2, 2]
+
+    B:
+      LOD: [2, 2, 3, 3]
+
+  DoubleElim7-9:
+    TU:
+      LOD: [2, 2, 3, 3]
+    B:
+      LOD: [2, 3, 3, 3]
+
+Sets:
+  - Set: [HSR]
+    Prefix: RR
+    Rounds: [1, 2]
+    Template: RoundRobin
+
+  - Set: [HSR]
+    Prefix: TB
+    Rounds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    Template: Tiebreakers
+
+  - Set: [HSR-A, HSR-B]
+    Prefix: RR
+    Rounds: [3, 4, 6, 7, 8]
+    Template: RoundRobin
+
+  - Set: [HSR-A, HSR-B]
+    Prefix: RR
+    Rounds: [5]
+    Template:
+      from: RoundRobin
+      add:
+        TU:
+          LOD: [1]
+        B:
+          LOD: [1]
+
+  - Set: [HSR-A, HSR-B]
+    Prefix: DE
+    Rounds: [1, 2, 3, 4]
+    Template: DoubleElim1-4
+
+  - Set: [HSR-A, HSR-B]
+    Prefix: DE
+    Rounds: [5, 6]
+    Template: DoubleElim5-6
+
+  - Set: [HSR-A, HSR-B]
+    Prefix: DE
+    Rounds: [7, 8, 9]
+    Template: DoubleElim7-9
+
+```
+
+### Configuration Options
+
+`Shuffle Subcategory`: Setting this option to `True` randomizes the order that any subcategory specification appears in a round. For example, if you have requested `["Organic", ~, ~, ~]`, setting this option to `True` makes the `"Organic"` subcategory uniformly distributed rather than the first question of each round. Note that setting this option to `True` breaks any matching between `TU` and `B` subcategories.
+
+`Shuffle Pairs`: Setting this option to `True` adds a randomization step after each pair of questions has been constructed. This is useful when you have intentionally matched `TU` and `B` subcategories, for example, but want to randomize the order that the subcategories appear in each round. Note that even when this is enabled, the final pair of each round will be `Short Answer` questions.
+
+`Shuffle LOD`: Setting this option to `True` randomizes the order that question difficulties appear in each round, similar to the above options.
+
+`Random Seed`: Setting this option to an integer fixes the generated assignment, all else being equal. If left unspecified or set to None, the assignment will have a slight random element to it.
+
+`Subcategory Mismatch Penalty`: Setting this option to an integer specifies how much cost is incurred by creating a subcategory mismatch. Common options include: 
+
+`1`, which says that matching a question with the right difficulty but wrong subcategory is equally costly as using a question whose difficulty is off by `1`, but the subcategory is correct. 
+
+`2`, which says that matching a question with the right difficulty but wrong subcategory is always less preferable than using a question with the right subcategory but off-by-one difficulty, but also always more preferable than using a question with the right subcategory but off-by-two difficulty.
+
+`Preferred Writers`: If specified, any writers NOT in this list are given a small penalty, encouraging the optimization algorithm to use the preferred writers. This penalty is very small and should never result in a question of the wrong subcategory or difficulty from a preferred writer being used over a question of the right subcategory and difficulty from an unpreferred writer.
+
+### Round Definitions
+
+```yaml
+Round Definitions:
+  Tiebreakers:
+    TU:
+      LOD: [2]
+
+  RoundRobin:
+    TU:
+      LOD: [1, 1, 1, 1]
+      Subcategory: [Organic, ~, ~, ~]
+    B:
+      LOD: [1, 1, 1, 1]
+      Subcategory: [Organic, ~, ~, ~]
+```
+
+`Round Definitions` serve as templates to build round specifications. Each round definition needs to specify the question types it uses (`TU` and/or `B` for TOSS-UP and BONUS) and the Level of Difficulty of each question. Optionally, the subcategories can be specified. Entering a `~` indicates that there is no subcategory preference for that slot.
+
+To explain the above specification in plain English, we want all Tiebreaker rounds to consist of a single
+TOSS-UP question with a difficulty of 2, and all Round Robin rounds to consist of 4 TOSS-UPs and 4 BONUSes that each have a difficulty of 1. Finally, a quarter of TOSS-UPs and BONUSes should use the "Organic" subcategory.
+
+### Sets
+
+```yaml
+Sets:
+  - Set: [HSR-A, HSR-B]
+    Prefix: RR
+    Rounds: [1, 2]
+    Template: RoundRobin
+```
+
+The `Sets` section actually specifies what rounds will be built. A set is defined with the `Set`, `Prefix`, `Rounds`, and `Template` keys. The `Set`, `Prefix`, and `Rounds` keys are round meta-data, while the `Template` key will build the round using the matching entry in the `Round Specifications` section. 
+
+These keys are used combinatorially - the above set will generate 4 rounds: HSR-A RR1, HSR-A RR2, HSR-B RR1, and HSR-B RR2. 
+
+Optionally, `Sets` can use the `from:`, `add:` syntax:
+
+```yaml
+  - Set: [HSR-A, HSR-B]
+    Prefix: RR
+    Rounds: [5]
+    Template:
+      from: RoundRobin
+      add:
+        TU:
+          LOD: [1]
+        B:
+          LOD: [1]
+```
+This syntax specifies that the `RoundRobin` template should be used, but there should be an extra TOSS-UP and BONUS that each have a difficulty of 1.
 
 <a name="nsb-make"></a>
 ## nsb make
