@@ -20,24 +20,25 @@ class TestInitializeTable(unittest.TestCase):
         table = document.tables[0]
         self.assertEqual(len(table.rows), nrows + 1)
 
-        for idx, cell in enumerate(table.rows[0].cells):
+        for idx, cell in enumerate(table._cells):
 
-            self.assertAlmostEqual(cell.width.inches, tables.COL_WIDTHS[idx], places=2)
+            row_idx, col_idx = divmod(idx, 13)
 
-        if subj:
-            for cell in table.columns[1].cells[1:]:
+            self.assertAlmostEqual(
+                cell.width.inches, tables.COL_WIDTHS[col_idx], places=2
+            )
+
+            if col_idx == 1 and row_idx > 0 and subj:
                 self.assertEqual(cell.text, subj)
 
-        if _set:
-            for cell in table.columns[5].cells[1:]:
+            if col_idx == 5 and row_idx > 0 and _set:
                 self.assertEqual(cell.text, _set)
 
-        if name:
-            for cell in table.columns[8].cells[1:]:
+            if col_idx == 8 and row_idx > 0 and name:
                 self.assertEqual(cell.text, name)
 
     def test_intialize_table(self):
-        _nrows = (0, 90, 150, 180)
+        _nrows = (0, 30, 60, 90)
         _sets = (None, "HSR", "HSR-A", "MSN")
         _subj = (None, "Chemistry", "Biology", "Earth and Space")
         _names = (None, "Rishi", "Casimir", "Andrew")
