@@ -112,7 +112,7 @@ def question_spec(request):
 class TestEditedQuestionsAssign:
     """Tests the EditedQuestions.assign method."""
 
-    def test_assign_contract(self, question_spec, doc_path):
+    def test_assign_contract_is_met(self, question_spec, doc_path):
         questions = EditedQuestions.from_docx_path(doc_path)
         pre_assign_sets = [x.text for x in questions.sets]
 
@@ -138,7 +138,7 @@ class TestEditedQuestionsAssign:
         # check that each question in the spec was assigned
         assert len(assignments) == len(question_spec.question_list)
 
-    def test_check_on_reassign(self, question_spec, doc_path, monkeypatch):
+    def test_user_checkin_before_reassign(self, question_spec, doc_path, monkeypatch):
 
         monkeypatch.setattr("builtins.input", lambda _: "n")
 
@@ -148,7 +148,7 @@ class TestEditedQuestionsAssign:
             questions.assign(question_spec)
             questions.assign(question_spec)
 
-    def test_assign_failure(self, doc_path):
+    def test_exception_when_assignment_failure(self, doc_path):
         questions = EditedQuestions.from_docx_path(doc_path)
 
         config_dict = {
@@ -179,5 +179,46 @@ class TestEditedQuestionsAssign:
 
         with pytest.raises(
             ValueError, match="Failed to assign the following questions:"
+        ):
+            questions.assign(question_spec)
+
+    def test_exception_when_fewer_questions_than_spec_requires(self, doc_path):
+        questions = EditedQuestions.from_docx_path(doc_path)
+
+        config_dict = {
+            "Configuration": {
+                "Shuffle Subcategory": False,
+                "Shuffle Pairs": False,
+                "Shuffle LOD": False,
+                "Random Seed": None,
+                "Subcategory Mismatch Penalty": 1,
+                "Preferred Writers": ["Chen, Andrew", "Kulkarni, Rishi"],
+            },
+            "Round Definitions": {
+                "RoundRobin": {
+                    "TU": {
+                        "LOD": [1, 2, 3, 4, 5, 6, 7, 8],
+                        "Subcategory": ["Organic", None],
+                    },
+                    "B": {
+                        "LOD": [1, 2, 3, 4, 5, 6, 7, 8],
+                        "Subcategory": ["Organic", None],
+                    },
+                }
+            },
+            "Sets": [
+                {
+                    "Set": ["HSR-A", "HSR-B"],
+                    "Prefix": "RR",
+                    "Rounds": [1],
+                    "Template": "RoundRobin",
+                }
+            ],
+        }
+
+        question_spec = ParsedQuestionSpec.from_yaml_dict(config_dict)
+
+        with pytest.raises(
+            ValueError, match="There are not enough available questions"
         ):
             questions.assign(question_spec)

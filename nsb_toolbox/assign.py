@@ -105,7 +105,7 @@ class EditedQuestions:
             the specifications that cannot be met so that the SME can find appropriate
             questions.
         """
-        self._validate()
+        self._validate(question_spec)
 
         cost_matrix = build_cost_matrix(questions=self, spec=question_spec)
 
@@ -217,9 +217,18 @@ class EditedQuestions:
             f"questions:\n{_NL.join(failed_assignments)}"
         )
 
-    def _validate(self):
+    def _validate(self, question_spec: ParsedQuestionSpec):
         """Rounds and question letters in self.document should be empty. If not,
-        ask the user to confirm that they intend to overwrite them."""
+        ask the user to confirm that they intend to overwrite them.
+
+        Also, there should be more questions available than are required by the spec."""
+
+        if len(self.difficulties) < len(question_spec.question_list):
+            raise ValueError(
+                "There are not enough available questions"
+                " in this document to fill the specified rounds."
+            )
+
         if any(x.text for x in self.rounds) or any(x.text for x in self.qletters):
             while True:
                 user_input = input(
