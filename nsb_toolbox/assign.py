@@ -1,6 +1,6 @@
 from functools import cached_property, reduce
 from pathlib import Path
-from typing import Generator, List, Union
+from typing import List, Union
 from typing_extensions import Self
 
 import docx.table
@@ -12,6 +12,7 @@ from nsb_toolbox.importers import load_doc
 
 from .classes import QuestionType, TossUpBonus
 from .yamlparsers import ParsedQuestionSpec
+from .docx_utils import column_indexer
 
 
 class EditedQuestions:
@@ -123,7 +124,7 @@ class EditedQuestions:
         return np.array(
             [
                 TossUpBonus(self._cells[i].text).value
-                for i in _col_iter(0, len(self._cells), self._col_count)
+                for i in column_indexer(0, len(self._cells), self._col_count)
             ],
             dtype="<U20",
         )
@@ -133,7 +134,7 @@ class EditedQuestions:
         return np.array(
             [
                 int(self._cells[i].text or -1)
-                for i in _col_iter(3, len(self._cells), self._col_count)
+                for i in column_indexer(3, len(self._cells), self._col_count)
             ]
         )
 
@@ -142,7 +143,7 @@ class EditedQuestions:
         return np.array(
             [
                 QuestionType(self._cells[i].paragraphs[0].runs[0].text).value
-                for i in _col_iter(2, len(self._cells), self._col_count)
+                for i in column_indexer(2, len(self._cells), self._col_count)
             ],
             dtype="<U20",
         )
@@ -152,7 +153,7 @@ class EditedQuestions:
         return np.array(
             [
                 self._cells[i].text
-                for i in _col_iter(12, len(self._cells), self._col_count)
+                for i in column_indexer(12, len(self._cells), self._col_count)
             ],
             dtype="<U20",
         )
@@ -162,22 +163,28 @@ class EditedQuestions:
         return np.array(
             [
                 self._cells[i].text
-                for i in _col_iter(8, len(self._cells), self._col_count)
+                for i in column_indexer(8, len(self._cells), self._col_count)
             ],
             dtype="<U100",
         )
 
     @property
     def sets(self) -> List[docx.table._Cell]:
-        return [self._cells[i] for i in _col_iter(5, len(self._cells), self._col_count)]
+        return [
+            self._cells[i] for i in column_indexer(5, len(self._cells), self._col_count)
+        ]
 
     @property
     def rounds(self) -> List[docx.table._Cell]:
-        return [self._cells[i] for i in _col_iter(6, len(self._cells), self._col_count)]
+        return [
+            self._cells[i] for i in column_indexer(6, len(self._cells), self._col_count)
+        ]
 
     @property
     def qletters(self) -> List[docx.table._Cell]:
-        return [self._cells[i] for i in _col_iter(7, len(self._cells), self._col_count)]
+        return [
+            self._cells[i] for i in column_indexer(7, len(self._cells), self._col_count)
+        ]
 
     def _write_assignment(
         self,
@@ -323,30 +330,3 @@ def invalid_assignment_mask(
 
     # apply all masks
     return reduce(np.logical_or, masks)
-
-
-def _col_iter(
-    col_num: int, total_cells: int, col_count: int, skip_header: bool = True
-) -> Generator[int, None, None]:
-    """Convenience function to build iterators over columns in a table.
-
-    Parameters
-    ----------
-    col_num : int
-        Column number to iterate over, indexing starts at 0.
-    total_cells : int
-        Total number of cells in the table.
-    col_count : int
-        Number of columns in the table.
-    skip_header : bool, optional
-        If true, the iterator will skip the first instance, by default True
-
-    Yields
-    ------
-    Generator[int, None, None]
-        range generator that yields cell indexes for the column of interest.
-    """
-    if skip_header:
-        return range(col_num + col_count, total_cells, col_count)
-    else:
-        return range(col_num, total_cells, col_count)

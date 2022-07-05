@@ -1,3 +1,4 @@
+from typing import Generator
 from docx.table import _Cell
 from docx.text.paragraph import Paragraph
 from docx.text.run import Run
@@ -265,3 +266,30 @@ def highlight_paragraph_text(para: Paragraph, color: WD_COLOR_INDEX):
     """
     for run in para.runs:
         run.font.highlight_color = color
+
+
+def column_indexer(
+    col_num: int, total_cells: int, col_count: int, skip_header: bool = True
+) -> Generator[int, None, None]:
+    """Convenience function to build iterators over columns in a table.
+
+    Parameters
+    ----------
+    col_num : int
+        Column number to iterate over, indexing starts at 0.
+    total_cells : int
+        Total number of cells in the table.
+    col_count : int
+        Number of columns in the table.
+    skip_header : bool, optional
+        If true, the iterator will skip the first instance, by default True
+
+    Yields
+    ------
+    Generator[int, None, None]
+        range generator that yields cell indexes for the column of interest.
+    """
+    if skip_header:
+        return range(col_num + col_count, total_cells, col_count)
+    else:
+        return range(col_num, total_cells, col_count)
