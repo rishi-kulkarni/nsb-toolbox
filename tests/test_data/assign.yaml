@@ -1,6 +1,6 @@
 Configuration:
-  Shuffle Subcategory: True # shuffles subcategories between toss-up and bonus
-  Shuffle Pairs: False # shuffles the order pairs appear in each round
+  Shuffle Subcategory: True
+  Shuffle Pairs: False
   Shuffle LOD: False
   Random Seed: ~
   Subcategory Mismatch Penalty: 1
