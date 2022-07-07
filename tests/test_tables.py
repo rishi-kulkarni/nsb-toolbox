@@ -1,6 +1,7 @@
 import unittest
 from pathlib import Path
 
+import pytest
 from docx import Document
 from docx.enum.text import WD_COLOR_INDEX
 from docx.shared import Pt
@@ -9,42 +10,73 @@ from nsb_toolbox import tables
 data_dir = Path(__file__).parent / "test_data"
 
 
-class TestInitializeTable(unittest.TestCase):
-    def _check_table_characteristics(self, document, nrows, subj, _set, name):
+init_table_sizes = (0, 30, 60)
+init_table_subj = (None, "Chemistry", "Earth and Space")
+init_table_set = (None, "HSR", "MSN")
+init_table_author = (None, "Rishi", "Andrew")
 
-        font = document.styles["Normal"].font
-        self.assertEqual(font.name, "Times New Roman")
-        self.assertEqual(font.size, Pt(11))
 
-        self.assertEqual(len(document.tables), 1)
-        table = document.tables[0]
-        self.assertEqual(len(table.rows), nrows + 1)
+@pytest.fixture(
+    scope="module",
+    params=zip(init_table_sizes, init_table_subj, init_table_set, init_table_author),
+    ids=["Empty", "30 Rows", "60 Rows"],
+)
+def initialize_params(request):
+    return request.param
 
-        for idx, cell in enumerate(table._cells):
 
+@pytest.fixture(scope="module")
+def initialized_doc_with_table(initialize_params):
+    nrows, subj, set_, name = initialize_params
+    return tables.initialize_table(nrows, subj=subj, set=set_, name=name)
+
+
+@pytest.fixture(scope="module")
+def table_cells(initialized_doc_with_table):
+    return initialized_doc_with_table.tables[0]._cells
+
+
+class TestInitialize:
+    def test_font_name(self, initialized_doc_with_table):
+        assert (
+            initialized_doc_with_table.styles["Normal"].font.name == "Times New Roman"
+        )
+
+    def test_font_size(self, initialized_doc_with_table):
+        assert initialized_doc_with_table.styles["Normal"].font.size == Pt(11)
+
+    def test_number_of_tables_in_doc(self, initialized_doc_with_table):
+        assert len(initialized_doc_with_table.tables) == 1
+
+    def test_numer_of_rows_in_table(
+        self, initialized_doc_with_table, initialize_params
+    ):
+        generated_rows = len(initialized_doc_with_table.tables[0].rows)
+        expected_rows = initialize_params[0]
+        assert generated_rows == expected_rows + 1
+
+    def test_cell_widths(self, table_cells):
+
+        for idx, cell in enumerate(table_cells):
             row_idx, col_idx = divmod(idx, 13)
 
-            self.assertAlmostEqual(
-                cell.width.inches, tables.COL_WIDTHS[col_idx], places=2
-            )
+            assert pytest.approx(cell.width.inches, 0.001) == tables.COL_WIDTHS[col_idx]
+
+    def test_cell_optional_parameters(self, table_cells, initialize_params):
+
+        _, subj, set_, author = initialize_params
+
+        for idx, cell in enumerate(table_cells):
+            row_idx, col_idx = divmod(idx, 13)
 
             if col_idx == 1 and row_idx > 0 and subj:
-                self.assertEqual(cell.text, subj)
+                assert cell.text == subj
 
-            if col_idx == 5 and row_idx > 0 and _set:
-                self.assertEqual(cell.text, _set)
+            if col_idx == 5 and row_idx > 0 and set_:
+                assert cell.text == set_
 
-            if col_idx == 8 and row_idx > 0 and name:
-                self.assertEqual(cell.text, name)
-
-    def test_intialize_table(self):
-        _nrows = (0, 30, 60, 90)
-        _sets = (None, "HSR", "HSR-A", "MSN")
-        _subj = (None, "Chemistry", "Biology", "Earth and Space")
-        _names = (None, "Rishi", "Casimir", "Andrew")
-        for nrow, subj, _set, name in zip(_nrows, _subj, _sets, _names):
-            document = tables.initialize_table(nrow, subj=subj, set=_set, name=name)
-            self._check_table_characteristics(document, nrow, subj, _set, name)
+            if col_idx == 8 and row_idx > 0 and author:
+                assert cell.text == author
 
 
 class TestFormatTUBCell(unittest.TestCase):
