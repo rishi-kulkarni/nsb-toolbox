@@ -6,6 +6,7 @@ from docx import Document
 from docx.enum.text import WD_COLOR_INDEX
 from docx.shared import Pt
 from nsb_toolbox import tables
+from nsb_toolbox.classes import ErrorLogger
 
 data_dir = Path(__file__).parent / "test_data"
 
@@ -79,38 +80,59 @@ class TestInitialize:
                 assert cell.text == author
 
 
-class TestFormatTUBCell(unittest.TestCase):
+@pytest.fixture
+def tub_test_doc():
+    return Document(data_dir / "test_TUB.docx")
 
-    test_data = Document(data_dir / "test_TUB.docx")
 
-    def _check(self, formatted_cell, expected_text):
-        self.assertEqual(formatted_cell.text, expected_text)
+@pytest.mark.parametrize("error_logger", [None, ErrorLogger(verbosity=True)])
+@pytest.mark.parametrize("row_idx", [0, 1, 2], ids=["TOSS-UP", "BONUS", "VISUAL BONUS"])
+class TestTUBCellFormatter:
+    def test_formatted_text(self, tub_test_doc, row_idx, error_logger):
+        expected_text = ["TOSS-UP", "BONUS", "VISUAL BONUS"]
+        row = tub_test_doc.tables[0].rows[row_idx]
+        for cell in row.cells:
+            formatted_cell = tables.TuBCellFormatter(cell, error_logger).format()
+            assert formatted_cell.text == expected_text[row_idx]
 
-        self.assertEqual(len(formatted_cell.paragraphs), 1)
+    def test_cell_has_single_paragraph(self, tub_test_doc, row_idx, error_logger):
+        row = tub_test_doc.tables[0].rows[row_idx]
+        for cell in row.cells:
+            formatted_cell = tables.TuBCellFormatter(cell, error_logger).format()
+            assert len(formatted_cell.paragraphs) == 1
 
-        cell_runs = formatted_cell.paragraphs[0].runs
-        self.assertEqual(len(cell_runs), 1)
-        self.assertIsNone(cell_runs[0].font.italic)
-        self.assertIsNone(cell_runs[0].font.bold)
+    def test_paragraph_contains_one_run_with_normal_text(
+        self, tub_test_doc, row_idx, error_logger
+    ):
+        row = tub_test_doc.tables[0].rows[row_idx]
+        for cell in row.cells:
+            formatted_cell = tables.TuBCellFormatter(cell, error_logger).format()
+            cell_runs = formatted_cell.paragraphs[0].runs
+            assert len(cell_runs) == 1
+            assert cell_runs[0].font.italic is None
+            assert cell_runs[0].font.bold is None
 
-    def test_TUB(self):
-        TUB = ("TOSS-UP", "BONUS", "VISUAL BONUS")
-        test_rows = self.test_data.tables[0].rows[:3]
 
-        for row, tub_expected in zip(test_rows, TUB):
-            for cell in row.cells:
-                tub_formatter = tables.TuBCellFormatter(cell)
-                self._check(tub_formatter.format(), tub_expected)
-
-    def test_errors(self):
-        error_row = self.test_data.tables[0].rows[3]
-        for cell in error_row.cells:
+@pytest.mark.parametrize("error_logger", [None, ErrorLogger(verbosity=True)])
+class TestTUBCellFormatterErrors:
+    def test_unrecognizable_cell_text_is_unchanged(self, tub_test_doc, error_logger):
+        row = tub_test_doc.tables[0].rows[3]
+        for cell in row.cells:
             prior_text = cell.text
-            tub_formatter = tables.TuBCellFormatter(cell)
-            test_run = tub_formatter.format().paragraphs[0].runs[0]
-            after_text = cell.text
-            self.assertEqual(prior_text, after_text)
-            self.assertEqual(test_run.font.highlight_color, WD_COLOR_INDEX.RED)
+            formatted_cell = tables.TuBCellFormatter(cell, error_logger).format()
+            after_text = formatted_cell.text
+            assert prior_text == after_text
+            if error_logger:
+                assert len(error_logger.errors) > 0
+
+    def test_unrecognizable_cell_is_highlighted(self, tub_test_doc, error_logger):
+        row = tub_test_doc.tables[0].rows[3]
+        for cell in row.cells:
+            formatted_cell = tables.TuBCellFormatter(cell, error_logger).format()
+            run = formatted_cell.paragraphs[0].runs[0]
+            assert run.font.highlight_color == WD_COLOR_INDEX.RED
+            if error_logger:
+                assert len(error_logger.errors) > 0
 
 
 class TestFormatSubject(unittest.TestCase):
