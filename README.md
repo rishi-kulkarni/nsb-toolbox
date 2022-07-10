@@ -63,8 +63,7 @@ subcommands:
 * Subject (Biology, Chemistry, etc.) are title case.
 * Question type (Multiple Choice, Short Answer) are italicized and title case.
 * There are four spaces between the question type and the start of the stem.
-* For multiple choice questions, there are two paragraph breaks between the stem and the first choice.
-* For multiple choice questions, there is a single paragraph break between each choice.
+* For multiple choice questions, the stem and choices are each separated by a single paragraph break.
 * There are two paragraph breaks before the answer line.
 * The answer line is uppercase.
 
