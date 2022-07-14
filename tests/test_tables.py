@@ -135,22 +135,37 @@ class TestTUBCellFormatterErrors:
                 assert len(error_logger.errors) > 0
 
 
-class TestFormatSubject(unittest.TestCase):
-
+@pytest.fixture
+def format_subject_rows():
     test_data = Document(data_dir / "test_subject.docx")
+    return test_data.tables[0].rows
 
-    def _check(self, formatted_cell, expected_text):
-        self.assertEqual(formatted_cell.text, expected_text)
 
-        self.assertEqual(len(formatted_cell.paragraphs), 1)
-
-        cell_runs = formatted_cell.paragraphs[0].runs
-        self.assertEqual(len(cell_runs), 1)
-        self.assertIsNone(cell_runs[0].font.italic)
-        self.assertIsNone(cell_runs[0].font.bold)
-
-    def test_subject(self):
-        SUBJECTS = (
+@pytest.mark.parametrize(
+    "row_idx",
+    [0, 1, 2, 3, 4, 5],
+    ids=[
+        "Biology",
+        "Chemistry",
+        "Physics",
+        "Earth and Space",
+        "Math",
+        "Energy",
+    ],
+)
+@pytest.mark.parametrize(
+    "cell_idx",
+    [0, 1, 2, 3],
+    ids=[
+        "Full Correct",
+        "Abbreviated",
+        "Abbreviated Wrong Format",
+        "Full Wrong Format",
+    ],
+)
+class TestFormatSubject:
+    def test_expected_text(self, format_subject_rows, row_idx, cell_idx):
+        EXPECTED_TEXT = (
             "Biology",
             "Chemistry",
             "Physics",
@@ -158,23 +173,41 @@ class TestFormatSubject(unittest.TestCase):
             "Math",
             "Energy",
         )
+        cell = format_subject_rows[row_idx].cells[cell_idx]
+        formatter = tables.SubjectCellFormatter(cell)
+        assert formatter.format().text == EXPECTED_TEXT[row_idx]
 
-        test_rows = self.test_data.tables[0].rows[:6]
+    def test_cell_formatting(self, format_subject_rows, row_idx, cell_idx):
+        cell = format_subject_rows[row_idx].cells[cell_idx]
+        formatter = tables.SubjectCellFormatter(cell)
 
-        for row, subject in zip(test_rows, SUBJECTS):
-            for cell in row.cells:
-                sformatter = tables.SubjectCellFormatter(cell)
-                self._check(sformatter.format(), subject)
+        formatted_cell = formatter.format()
+        assert len(formatted_cell.paragraphs) == 1
+        assert len(formatted_cell.paragraphs[0].runs) == 1
+        assert formatted_cell.paragraphs[0].runs[0].font.italic is None
+        assert formatted_cell.paragraphs[0].runs[0].font.bold is None
 
-    def test_errors(self):
-        error_row = self.test_data.tables[0].rows[6]
-        for cell in error_row.cells:
-            prior_text = cell.text
-            sformatter = tables.SubjectCellFormatter(cell)
-            test_run = sformatter.format().paragraphs[0].runs[0]
-            after_text = cell.text
-            self.assertEqual(prior_text, after_text)
-            self.assertEqual(test_run.font.highlight_color, WD_COLOR_INDEX.RED)
+
+@pytest.mark.parametrize(
+    "cell_idx",
+    [0, 1, 2, 3],
+    ids=[
+        "Biologychemistry",
+        "Multiple Choice",
+        "_Life Science_",
+        "_Physical Science_",
+    ],
+)
+class TestFormatSubjectErrors:
+    def test_errors(self, format_subject_rows, cell_idx):
+        cell = format_subject_rows[6].cells[cell_idx]
+
+        prior_text = cell.text
+        sformatter = tables.SubjectCellFormatter(cell)
+        test_run = sformatter.format().paragraphs[0].runs[0]
+        after_text = cell.text
+        assert prior_text == after_text
+        assert test_run.font.highlight_color == WD_COLOR_INDEX.RED
 
 
 class TestQuestionFormatter(unittest.TestCase):
