@@ -111,6 +111,7 @@ class ErrorLogger:
         self.stats = {
             "TOSS-UP": 0,
             "BONUS": 0,
+            "VISUAL BONUS": 0,
             "Short Answer": 0,
             "Multiple Choice": 0,
         }
