@@ -180,9 +180,16 @@ class QuestionCellFormatter(CellFormatter):
 
     _choices = ("W)", "X)", "Y)", "Z)")
 
-    def __init__(self, cell: _Cell, error_logger: Optional[ErrorLogger] = None):
+    def __init__(
+        self,
+        cell: _Cell,
+        force_capitalize: bool = False,
+        error_logger: Optional[ErrorLogger] = None,
+    ):
         self.error_logger = error_logger
         self.cell = cell
+        self.force_capitalize = force_capitalize
+
         self.state = QuestionFormatterState.Q_START
         self.q_type = None
         self.q_type_run = None
@@ -263,13 +270,15 @@ class QuestionCellFormatter(CellFormatter):
                 self.state = QuestionFormatterState.ANSWER
 
     def _answer_handler(self, para: Paragraph):
-        # if we find a choice line while looking for an answer,
-        # the question is probably not Short Answer. highlight
-        # the question type to indicate this
 
         answer_match = self._answer_re.match(para.text)
         if answer_match:
             para.insert_paragraph_before("")
+
+            # if we're forcing capitalization, apply it now
+            if self.force_capitalize:
+                for run in para.runs:
+                    run.text = run.text.upper()
 
             # for MC questions, additional checks to make sure
             # answer line matches choice
@@ -476,13 +485,16 @@ def format_column(
         if error_logger is not None:
             error_logger.set_row(idx + 1)
         if cell.text.strip() != "" and formatter:
-            formatter(cell, error_logger).format()
+            formatter(cell, error_logger=error_logger).format()
     return nsb_table_column
 
 
 def format_table(
-    table_doc: docx.document.Document, cols_to_format: Tuple[str], verbosity=True
-):
+    table_doc: docx.document.Document,
+    cols_to_format: Tuple[str],
+    force_capitalize: bool = False,
+    verbosity: bool = True,
+) -> None:
     """Formats a Word document containing a Science Bowl question table.
 
     Specifically, this function makes sure the columns fit the following
@@ -504,7 +516,7 @@ def format_table(
     FORMATTERS = {
         "TUB": TuBCellFormatter,
         "Subj": SubjectCellFormatter,
-        "Ques": QuestionCellFormatter,
+        "Ques": partial(QuestionCellFormatter, force_capitalize=force_capitalize),
         "LOD": DifficultyFormatter,
     }
     error_logger = ErrorLogger(verbosity)
