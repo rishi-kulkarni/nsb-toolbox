@@ -26,7 +26,7 @@ def format(args):
     path_to_data = validate_path(args.path)
     doc = Document(path_to_data)
 
-    format_table(doc, cols_to_format)
+    format_table(doc, cols_to_format, force_capitalize=args.capitalize)
     doc.save(path_to_data)
 
 
@@ -53,6 +53,11 @@ def main():
     subparsers = argparser.add_subparsers(title="subcommands")
     format_parser = subparsers.add_parser(
         "format", parents=[path_parser], help="format a Science Bowl file"
+    )
+    format_parser.add_argument(
+        "--capitalize",
+        action="store_true",
+        help="force all answer lines to be capitalized",
     )
     format_parser.set_defaults(func=format)
 
