@@ -22,6 +22,7 @@ from .docx_utils import (
     preprocess_cell,
     shade_columns,
     split_run_at,
+    move_runs_to_end_of_para,
 )
 
 COL_WIDTHS = (
@@ -226,10 +227,23 @@ class QuestionCellFormatter(CellFormatter):
                     self.error_logger.log_error("Couldn't parse question.")
                 return None
 
-            # now, the first part of the stem is the second run
-            # if it's not left-padded with 4 spaces, make sure it is
-            # doing it this way ensures that any other formatting in
-            # the stem is preserved (superscripts, subscripts, etc.)
+            # if this para only has 1 run, the stem should be in the next paragraph.
+            if len(para.runs) == 1:
+                next_para = para._p.getnext()
+                next_para_text = "".join(_r.text for _r in next_para if _r.text)
+                # need to check if there even IS a stem - next paragraph shouldn't start
+                # with W) or ANSWER:
+                if self._choices_re.match(next_para_text) or self._answer_re.match(
+                    next_para_text
+                ):
+                    highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
+                    if self.error_logger is not None:
+                        self.error_logger.log_error("Couldn't parse question.")
+
+                else:
+                    move_runs_to_end_of_para(next_para, para)
+
+            # left pad the first run of the stem
             stem_run = para.runs[1]
             stem_run.text = f"    {stem_run.text.lstrip()}"
 
