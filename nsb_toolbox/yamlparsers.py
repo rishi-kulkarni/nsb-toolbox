@@ -127,6 +127,18 @@ class ParsedQuestionSpec:
     def qletters(self) -> np.ndarray:
         return np.array([question.letter for question in self.question_list])
 
+    @cached_property
+    def stats(self) -> Dict[str, int]:
+        raw_values = np.array(
+            [
+                f"{q.set:<10}{q.difficulty:^}{q.tub.value:>12}"
+                for q in self.question_list
+            ]
+        )
+        return {
+            val: count for val, count in zip(*np.unique(raw_values, return_counts=True))
+        }
+
     @classmethod
     def from_yaml_dict(cls, yaml_config: Dict) -> Self:
         """Parses a round specification config and returns an instance of this dataclass.

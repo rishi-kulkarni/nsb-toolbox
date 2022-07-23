@@ -1,6 +1,6 @@
 from functools import cached_property, reduce
 from pathlib import Path
-from typing import List, Union
+from typing import Dict, List, Union
 from typing_extensions import Self
 
 import docx.table
@@ -45,9 +45,10 @@ class EditedQuestions:
         Assigns the questions to a specification via a linear sum assignment.
     """
 
-    def __init__(self, document: docx.document.Document) -> Self:
+    def __init__(self, document: docx.document.Document, dry_run: bool = False) -> Self:
 
         self.document = document
+        self.dry_run = dry_run
 
         self._cells = self.document.tables[0]._cells
         self._col_count = self.document.tables[0]._column_count
@@ -73,7 +74,7 @@ class EditedQuestions:
         self.document.save(path)
 
     @classmethod
-    def from_docx_path(cls, path: Union[Path, str]) -> Self:
+    def from_docx_path(cls, path: Union[Path, str], dry_run: bool = False) -> Self:
         """Generates a class instance from a path to a docx file.
 
         Parameters
@@ -85,7 +86,7 @@ class EditedQuestions:
         EditedQuestions
         """
         doc = load_doc(path)
-        return cls(doc)
+        return cls(doc, dry_run=dry_run)
 
     def assign(self, question_spec: ParsedQuestionSpec):
         """Attempts to find a valid assignment of the questions to question_spec via a
@@ -106,6 +107,7 @@ class EditedQuestions:
             questions.
         """
         self._validate(question_spec)
+        self._report_stats(question_spec)
 
         cost_matrix = build_cost_matrix(questions=self, spec=question_spec)
 
@@ -116,7 +118,6 @@ class EditedQuestions:
             self._raise_assignment_failure(question_spec, assignment_costs)
 
         else:
-            print("Found a successful set of assignments!")
             self._write_assignment(question_spec, q_assignments, round_assignments)
 
     @cached_property
@@ -168,6 +169,20 @@ class EditedQuestions:
             dtype="<U100",
         )
 
+    @cached_property
+    def stats(self) -> Dict[str, int]:
+        raw_values = np.array(
+            [
+                f"{set_.text:<10}{difficulty:^}{tub:>12}"
+                for set_, difficulty, tub in zip(
+                    self.sets, self.difficulties, self.tubs
+                )
+            ]
+        )
+        return {
+            val: count for val, count in zip(*np.unique(raw_values, return_counts=True))
+        }
+
     @property
     def sets(self) -> List[docx.table._Cell]:
         return [
@@ -194,10 +209,14 @@ class EditedQuestions:
     ):
         """In case of assignment success, write successful assignemnt to
         this question set."""
-        for q_idx, spec_idx in zip(q_assignments, round_assignments):
-            self.sets[q_idx].text = question_spec.sets[spec_idx]
-            self.rounds[q_idx].text = question_spec.rounds[spec_idx]
-            self.qletters[q_idx].text = question_spec.qletters[spec_idx]
+        if not self.dry_run:
+            print("Found a successful set of assignments!")
+            for q_idx, spec_idx in zip(q_assignments, round_assignments):
+                self.sets[q_idx].text = question_spec.sets[spec_idx]
+                self.rounds[q_idx].text = question_spec.rounds[spec_idx]
+                self.qletters[q_idx].text = question_spec.qletters[spec_idx]
+        else:
+            print("Not writing assignments as this is a dry run.")
 
     def _raise_assignment_failure(
         self, question_spec: ParsedQuestionSpec, assignment_costs: np.ndarray
@@ -216,6 +235,17 @@ class EditedQuestions:
             "Failed to assign the following "
             f"questions:\n{_NL.join(failed_assignments)}"
         )
+
+    def _report_stats(self, question_spec: ParsedQuestionSpec):
+
+        print(f"{'Set':<9}{'LOD':^}{'TUB':>10}{'Need':>11}{'Have':>10}")
+
+        for key in sorted(self.stats.keys() | question_spec.stats.keys()):
+
+            need = question_spec.stats.get(key, 0)
+            have = self.stats.get(key, 0)
+
+            print(f"{key}{need:>10}{have:>10}")
 
     def _validate(self, question_spec: ParsedQuestionSpec):
         """Rounds and question letters in self.document should be empty. If not,

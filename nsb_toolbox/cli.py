@@ -31,7 +31,7 @@ def format(args):
 
 
 def assign(args):
-    questions = EditedQuestions.from_docx_path(args.path)
+    questions = EditedQuestions.from_docx_path(args.path, dry_run=args.dry_run)
     spec = ParsedQuestionSpec.from_yaml_path(args.config)
 
     questions.assign(spec)
@@ -107,6 +107,11 @@ def main():
         type=Path,
         required=True,
         help="Path to yaml config",
+    )
+    assign_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="performs assignment, but doesn't save results",
     )
     assign_parser.set_defaults(func=assign)
 
