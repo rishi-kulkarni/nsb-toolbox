@@ -333,6 +333,52 @@ class TestQuestionFormatter(unittest.TestCase):
             self.assertEqual(test_text, expected)
             self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
 
+    def test_line_break_short_answer(self):
+        """This makes sure that SA questions with a line break between the question type
+        and the stem are handled properly."""
+
+        expected = [
+            "Short Answer",
+            "    This is a well-formatted question.",
+            "",
+            "ANSWER: IT SHOULD BE UNCHANGED",
+        ]
+
+        cells = self.test_data.tables[0].rows[7].cells
+
+        for cell in cells[:1]:
+            q_parser = tables.QuestionCellFormatter(
+                tables.preprocess_cell(cell),
+            )
+            test_text = self._extract_cell_text(q_parser.format())
+            self.assertEqual(test_text, expected)
+            self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
+
+    def test_line_break_multiple_choice(self):
+        """This makes sure that MC questions with a line break between the question type
+        and the stem are handled properly."""
+
+        expected = [
+            "Multiple Choice",
+            "    This is a well-formatted question.",
+            "W) This is the W) choice",
+            "X) This is the X) choice",
+            "Y) This is the Y) choice",
+            "Z) This is the Z) choice",
+            "",
+            "ANSWER: W) THIS IS THE W) CHOICE",
+        ]
+
+        cells = self.test_data.tables[0].rows[8].cells
+
+        for cell in cells[:1]:
+            q_parser = tables.QuestionCellFormatter(
+                tables.preprocess_cell(cell),
+            )
+            test_text = self._extract_cell_text(q_parser.format())
+            self.assertEqual(test_text, expected)
+            self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
+
     def test_question_type_warning(self):
         """Tests that mislabeled question types get warnings."""
         cells = self.test_data.tables[0].rows[2].cells

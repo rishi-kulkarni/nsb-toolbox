@@ -193,6 +193,14 @@ def copy_run_formatting(run_from: Run, run_to: Run):
     run_to._r.remove(run_to_rPr)
 
 
+def move_runs_to_end_of_para(para_from: Paragraph, para_to: Paragraph) -> None:
+    for run in para_from:
+        para_to_end = para_to.runs[-1]._r
+        para_to_end.addnext(run)
+
+    para_from.getparent().remove(para_from)
+
+
 def shade_columns(column, shade: str):
     """Shades a list of cells in-place with a hex color value.
 
