@@ -50,9 +50,13 @@ subcommands:
 
 ### Usage
 
-```nsb format``` takes a single argument, the path to the target .docx file. For example:
+```nsb format``` takes a single mandatory argument, the path to the target .docx file. For example:
 
 ```nsb format path/to/nsb/questions.docx```
+
+It also takes a single optional argument, `--capitalize`. If given, `nsb format` will force every answer line to be capitalized. For example:
+
+```nsb format path/to/nsb/questions.docx --capitalize```
 
 <a name="auto-format"></a>
 ### Auto-Formatting
@@ -65,7 +69,7 @@ subcommands:
 * There are four spaces between the question type and the start of the stem.
 * For multiple choice questions, the stem and choices are each separated by a single paragraph break.
 * There are two paragraph breaks before the answer line.
-* The answer line is uppercase.
+* The answer line is uppercase, assuming the `--capitalize` argument is used.
 
 Notably, `nsb format` operates by moving, copying, and inserting XML elements. This ensures that **user-provided formatting won't be overwritten** (for example, superscripts and subscripts for mathematical formulae). 
 
@@ -122,9 +126,35 @@ Question 7: Question type is MC, but has no choices.
 
 ### Usage
 
-```nsb assign``` takes two arguments, the path to the edited set of Science Bowl questions and the path to the configuration file. For example:
+```nsb assign``` takes two mandatory arguments, the path to the edited set of Science Bowl questions and the path to the configuration file. For example:
 
 ```nsb assign path/to/nsb/questions.docx -c path/to/config.yaml```
+
+It also takes an optional `--dry-run` argument, which will report statistics on the assignment procedure, but will not write the successful assignment to disk. This is primarily useful for determining what additional questions of a given difficulty or type are required. For example:
+
+```zsh
+❯ nsb assign Kulkarni_HS_Chemistry_Regionals.docx -c assign.yaml --dry-run
+Set      LOD       TUB       Need      Have
+HSR       1       BONUS         8        40
+HSR       1     TOSS-UP         8        46
+HSR       2       BONUS         0        21
+HSR       2     TOSS-UP        10        31
+HSR       3       BONUS         0        22
+HSR       3     TOSS-UP         0        30
+HSR-A     1       BONUS        25        10
+HSR-A     1     TOSS-UP        25         5
+HSR-A     2       BONUS        23         3
+HSR-A     2     TOSS-UP        30         5
+HSR-A     3       BONUS        13        13
+HSR-A     3     TOSS-UP         6         9
+HSR-B     1       BONUS        25         7
+HSR-B     1     TOSS-UP        25         6
+HSR-B     2       BONUS        23         6
+HSR-B     2     TOSS-UP        30         4
+HSR-B     3       BONUS        13        13
+HSR-B     3     TOSS-UP         6         9
+Not writing assignments as this is a dry run.
+```
 
 <a name="assign-config"></a>
 ### Sample Configuration File
