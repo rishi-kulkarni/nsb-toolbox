@@ -39,7 +39,7 @@ def preprocess_cell(cell: _Cell) -> _Cell:
                 # if there are empty runs, delete them
                 if run.text == "":
                     delete_run(run)
-                # if there are weirdly formatted run that is only whitespace,
+                # if there is a weirdly formatted run that is only whitespace,
                 # strip their formatting
                 elif run.text.strip() == "":
                     run.font.italic = (
@@ -59,10 +59,40 @@ def preprocess_cell(cell: _Cell) -> _Cell:
             if para.text.strip() == "":
                 delete_paragraph(para)
             else:
-                para.runs[0].text = para.runs[0].text.lstrip()
-                para.runs[-1].text = para.runs[-1].text.rstrip()
+                strip_padding_whitespace(para, leading=True)
+                strip_padding_whitespace(para, leading=False)
 
     return cell
+
+
+def strip_padding_whitespace(para: Paragraph, leading=True):
+    """Removes any empty runs at the beginning or end of a paragraph
+    and makes sure the first (or last) run with text has no left
+    (or right) padding.
+
+    Parameters
+    ----------
+    para : Paragraph
+    leading : bool, optional
+        If true, strips left padding, otherwise strips right padding,
+        by default True
+    """
+    if leading:
+        target_idx = 0
+
+    else:
+        target_idx = -1
+
+    target_run = para.runs[target_idx]
+
+    while not target_run.text.strip():
+        delete_run(target_run)
+        target_run = para.runs[target_idx]
+
+    if leading:
+        target_run.text = target_run.text.lstrip()
+    else:
+        target_run.text = target_run.text.rstrip()
 
 
 def split_soft_returns(para: Paragraph) -> Paragraph:

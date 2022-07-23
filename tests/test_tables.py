@@ -217,10 +217,9 @@ class TestQuestionFormatter(unittest.TestCase):
         ret = []
         for para in cell.paragraphs:
             if para.runs == []:
-                ret.append("")
+                ret.append([""])
             else:
-                for run in para.runs:
-                    ret.append(run.text)
+                ret.append([run.text for run in para.runs])
 
         return ret
 
@@ -228,10 +227,9 @@ class TestQuestionFormatter(unittest.TestCase):
         """This makes sure that recognizable Short Answer questions
         are properly formatted."""
         expected = [
-            "Short Answer",
-            "    This is a well-formatted question.",
-            "",
-            "ANSWER: IT SHOULD BE UNCHANGED",
+            ["Short Answer", "    This is a well-formatted question."],
+            [""],
+            ["ANSWER: IT SHOULD BE UNCHANGED"],
         ]
 
         cells = self.test_data.tables[0].rows[0].cells
@@ -246,14 +244,13 @@ class TestQuestionFormatter(unittest.TestCase):
         """This makes sure that recognizable Multiple Choice questions
         are properly formatted."""
         expected = [
-            "Multiple Choice",
-            "    This is a well-formatted question.",
-            "W) This is the W) choice",
-            "X) This is the X) choice",
-            "Y) This is the Y) choice",
-            "Z) This is the Z) choice",
-            "",
-            "ANSWER: W) THIS IS THE W) CHOICE",
+            ["Multiple Choice", "    This is a well-formatted question."],
+            ["W) This is the W) choice"],
+            ["X) This is the X) choice"],
+            ["Y) This is the Y) choice"],
+            ["Z) This is the Z) choice"],
+            [""],
+            ["ANSWER: W) THIS IS THE W) CHOICE"],
         ]
 
         cells = self.test_data.tables[0].rows[1].cells
@@ -269,14 +266,13 @@ class TestQuestionFormatter(unittest.TestCase):
         don't have their answer auto-capitalized."""
 
         expected = [
-            "Multiple Choice",
-            "    This is a well-formatted question.",
-            "W) This is the W) choice",
-            "X) This is the X) choice",
-            "Y) This is the Y) choice",
-            "Z) This is the Z) choice",
-            "",
-            "ANSWER: W) this is the w) choice",
+            ["Multiple Choice", "    This is a well-formatted question."],
+            ["W) This is the W) choice"],
+            ["X) This is the X) choice"],
+            ["Y) This is the Y) choice"],
+            ["Z) This is the Z) choice"],
+            [""],
+            ["ANSWER: W) this is the w) choice"],
         ]
 
         cells = self.test_data.tables[0].rows[4].cells
@@ -292,14 +288,13 @@ class TestQuestionFormatter(unittest.TestCase):
         Multiple Choice questions."""
 
         expected = [
-            "Multiple Choice",
-            "    This is a well-formatted question.",
-            "W) This is the W) choice",
-            "X) This is the X) choice",
-            "Y) This is the Y) choice",
-            "Z) This is the Z) choice",
-            "",
-            "ANSWER: W) THIS IS THE W) CHOICE",
+            ["Multiple Choice", "    This is a well-formatted question."],
+            ["W) This is the W) choice"],
+            ["X) This is the X) choice"],
+            ["Y) This is the Y) choice"],
+            ["Z) This is the Z) choice"],
+            [""],
+            ["ANSWER: W) THIS IS THE W) CHOICE"],
         ]
 
         cells = self.test_data.tables[0].rows[5].cells
@@ -317,10 +312,9 @@ class TestQuestionFormatter(unittest.TestCase):
         Short Answer questions."""
 
         expected = [
-            "Short Answer",
-            "    This is a well-formatted question.",
-            "",
-            "ANSWER: IT SHOULD BE UNCHANGED",
+            ["Short Answer", "    This is a well-formatted question."],
+            [""],
+            ["ANSWER: IT SHOULD BE UNCHANGED"],
         ]
 
         cells = self.test_data.tables[0].rows[6].cells
@@ -338,10 +332,9 @@ class TestQuestionFormatter(unittest.TestCase):
         and the stem are handled properly."""
 
         expected = [
-            "Short Answer",
-            "    This is a well-formatted question.",
-            "",
-            "ANSWER: IT SHOULD BE UNCHANGED",
+            ["Short Answer", "    This is a well-formatted question."],
+            [""],
+            ["ANSWER: IT SHOULD BE UNCHANGED"],
         ]
 
         cells = self.test_data.tables[0].rows[7].cells
@@ -359,14 +352,13 @@ class TestQuestionFormatter(unittest.TestCase):
         and the stem are handled properly."""
 
         expected = [
-            "Multiple Choice",
-            "    This is a well-formatted question.",
-            "W) This is the W) choice",
-            "X) This is the X) choice",
-            "Y) This is the Y) choice",
-            "Z) This is the Z) choice",
-            "",
-            "ANSWER: W) THIS IS THE W) CHOICE",
+            ["Multiple Choice", "    This is a well-formatted question."],
+            ["W) This is the W) choice"],
+            ["X) This is the X) choice"],
+            ["Y) This is the Y) choice"],
+            ["Z) This is the Z) choice"],
+            [""],
+            ["ANSWER: W) THIS IS THE W) CHOICE"],
         ]
 
         cells = self.test_data.tables[0].rows[8].cells
