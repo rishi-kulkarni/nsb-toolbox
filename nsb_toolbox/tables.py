@@ -1,7 +1,7 @@
 import re
 from abc import ABC, abstractclassmethod
 from enum import Enum
-from functools import lru_cache, partial
+from functools import partial
 from typing import Optional, Tuple
 
 import docx.document
@@ -57,6 +57,18 @@ COL_MAPPING = {
     "Subcat": 12,
 }
 
+TUB_RE = re.compile(r"\s*(TOSS-UP|BONUS|VISUAL BONUS|TU|B|VB)\b", re.IGNORECASE)
+SUBJECT_RE = re.compile(
+    r"\s*(BIOLOGY|B|CHEMISTRY|C|EARTH AND SPACE|ES|ENERGY|EN|MATH|M|PHYSICS|P)\b",
+    re.IGNORECASE,
+)
+Q_TYPE_RE = re.compile(r"\s*(Short Answer|SA|Multiple Choice|MC)\s*", re.IGNORECASE)
+CHOICES_RE = re.compile(r"\s*([W|X|Y|Z]\))\s*", re.IGNORECASE)
+TEST_CHOICE_RE = re.compile(r"\s*([W|X|Y|Z]\)?)\s*", re.IGNORECASE)
+ANSWER_RE = re.compile(r"\s*(ANSWER:)\s*", re.IGNORECASE)
+
+CHOICES = ("W)", "X)", "Y)", "Z)")
+
 
 class QuestionFormatterState(Enum):
     Q_START = 0
@@ -75,6 +87,14 @@ class CellFormatter(ABC):
     @abstractclassmethod
     def format(self):
         """All CellFormatters have a format function."""
+
+    def log_error(self, msg: str, level: int = 0):
+        if level == 1:
+            highlight_cell_text(self.cell, WD_COLOR_INDEX.YELLOW)
+        elif level == 2:
+            highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
+        if self.error_logger is not None:
+            self.error_logger.log_error(msg)
 
 
 def make_jans_shadings(table):
@@ -167,19 +187,8 @@ def initialize_table(
     return document
 
 
-@lru_cache
-def _compile(regex: str):
-    return re.compile(regex, re.IGNORECASE)
-
-
 class QuestionCellFormatter(CellFormatter):
     """Formats a cell containing a Science Bowl Question."""
-
-    _q_type_possible = _compile(r"\s*(Short Answer|SA|Multiple Choice|MC)\s*")
-    _choices_re = _compile(r"\s*([W|X|Y|Z]\))\s*")
-    _answer_re = _compile(r"\s*(ANSWER:)\s*")
-
-    _choices = ("W)", "X)", "Y)", "Z)")
 
     def __init__(
         self,
@@ -197,14 +206,42 @@ class QuestionCellFormatter(CellFormatter):
         self.current_choice = 0
         self.choices_para = {}
         self.found_all = False
-        self.errors = []
+
+    def format(self):
+        """Takes a preprocessed question cell
+        and returns a cell containing a properly-formatted
+        Science Bowl question.
+
+        Returns
+        -------
+        _Cell
+        """
+        _HANDLERS = {
+            QuestionFormatterState.Q_START: self._start_handler,
+            QuestionFormatterState.STEM_END: self._stem_end_handler,
+            QuestionFormatterState.CHOICES: self._choice_handler,
+            QuestionFormatterState.ANSWER: self._answer_handler,
+        }
+        for para in self.cell.paragraphs:
+            _HANDLERS[self.state](para)
+
+        if not self.found_all:
+            self.log_error(
+                f"Couldn't parse question, was looking for {self.state}", level=2
+            )
+
+        else:
+            if self.error_logger is not None:
+                self.error_logger.stats[self.q_type.value] += 1
+
+        return self.cell
 
     def _start_handler(self, para: Paragraph):
-        q_type_match = self._q_type_possible.match(para.text)
+        q_type_match = Q_TYPE_RE.match(para.text)
         if q_type_match:
             # the first run of the paragraph should contain the question start
             q_type_run = para.runs[0]
-            run_match = self._q_type_possible.match(q_type_run.text)
+            run_match = Q_TYPE_RE.match(q_type_run.text)
 
             if run_match:
                 self.q_type = QuestionType.from_string(run_match.group(1))
@@ -222,9 +259,7 @@ class QuestionCellFormatter(CellFormatter):
                 # letter in the question start or something, we
                 # will have a problem. in this case, highlight
                 # the question.
-                highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
-                if self.error_logger is not None:
-                    self.error_logger.log_error("Couldn't parse question.")
+                self.log_error("Couldn't parse question.", level=2)
                 return None
 
             # if this para only has 1 run, the stem should be in the next paragraph.
@@ -233,12 +268,8 @@ class QuestionCellFormatter(CellFormatter):
                 next_para_text = "".join(_r.text for _r in next_para if _r.text)
                 # need to check if there even IS a stem - next paragraph shouldn't start
                 # with W) or ANSWER:
-                if self._choices_re.match(next_para_text) or self._answer_re.match(
-                    next_para_text
-                ):
-                    highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
-                    if self.error_logger is not None:
-                        self.error_logger.log_error("Couldn't parse question.")
+                if CHOICES_RE.match(next_para_text) or ANSWER_RE.match(next_para_text):
+                    self.log_error("Couldn't parse question.", level=2)
 
                 else:
                     move_runs_to_end_of_para(next_para, para)
@@ -251,21 +282,42 @@ class QuestionCellFormatter(CellFormatter):
         else:
             pass
 
+    def _stem_end_handler(self, para: Paragraph):
+        choice_match = CHOICES_RE.match(para.text)
+        answer_match = ANSWER_RE.match(para.text)
+
+        # handle incorrectly labeled questions and divert to the proper handler
+        if choice_match:
+            if self.q_type is QuestionType.SHORT_ANSWER:
+                self.q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+                self.log_error("Question type is SA, but has choices.")
+                self.q_type = QuestionType.MULTIPLE_CHOICE
+            self.state = QuestionFormatterState.CHOICES
+            self._choice_handler(para)
+
+        elif answer_match:
+            if self.q_type is QuestionType.MULTIPLE_CHOICE:
+                self.q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+                self.log_error("Question type is MC, but has no choices.")
+                self.q_type = QuestionType.SHORT_ANSWER
+            self.state = QuestionFormatterState.ANSWER
+            self._answer_handler(para)
+
     def _choice_handler(self, para: Paragraph):
 
-        choice_match = self._choices_re.match(para.text)
+        choice_match = CHOICES_RE.match(para.text)
 
         if choice_match:
 
             # the first run should contain the choice
             choice_run = para.runs[0]
-            run_match = self._choices_re.match(choice_run.text)
+            run_match = CHOICES_RE.match(choice_run.text)
             if run_match:
                 # if we matched the wrong choice, replace it with
                 # the right choice
-                if run_match.group(1) != self._choices[self.current_choice]:
+                if run_match.group(1) != CHOICES[self.current_choice]:
                     choice_run.text = choice_run.text.replace(
-                        run_match.group(1), self._choices[self.current_choice], 1
+                        run_match.group(1), CHOICES[self.current_choice], 1
                     )
                 # save text and update the choice we're looking for
                 self.choices_para[self.current_choice] = para
@@ -273,9 +325,7 @@ class QuestionCellFormatter(CellFormatter):
             else:
                 # same problem as above, it is possible that someone
                 # italicized half of the choice start.
-                highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
-                if self.error_logger is not None:
-                    self.error_logger.log_error("Couldn't parse question.")
+                self.log_error("Couldn't parse question.", level=2)
                 return None
 
             # if we just found Z), we're done looking for choices
@@ -285,7 +335,7 @@ class QuestionCellFormatter(CellFormatter):
 
     def _answer_handler(self, para: Paragraph):
 
-        answer_match = self._answer_re.match(para.text)
+        answer_match = ANSWER_RE.match(para.text)
         if answer_match:
             para.insert_paragraph_before("")
 
@@ -299,8 +349,7 @@ class QuestionCellFormatter(CellFormatter):
             if self.q_type is QuestionType.MULTIPLE_CHOICE:
                 answer_text = para.text.replace("ANSWER: ", "", 1)
 
-                test_choice_re = _compile(r"\s*([W|X|Y|Z]\)?)\s*")
-                test_choice_match = test_choice_re.match(answer_text)
+                test_choice_match = TEST_CHOICE_RE.match(answer_text)
                 if test_choice_match:
                     # if answer line is a single letter, copy the text of
                     # the choice over to the answer line
@@ -308,9 +357,7 @@ class QuestionCellFormatter(CellFormatter):
                         test_choice = test_choice_match.group(1)
                         if not test_choice.endswith(")"):
                             test_choice += ")"
-                        correct_para = self.choices_para[
-                            self._choices.index(test_choice)
-                        ]
+                        correct_para = self.choices_para[CHOICES.index(test_choice)]
                         para.text = "ANSWER: "
                         for run in correct_para.runs:
                             new_run = para.add_run(run.text.upper())
@@ -319,92 +366,25 @@ class QuestionCellFormatter(CellFormatter):
                     # otherwise, check that the answer line text matches the choice.
                     # if it doesn't raise a linting error.
                     else:
-                        choice_num = self._choices.index(test_choice_match.group(1))
+                        choice_num = CHOICES.index(test_choice_match.group(1))
                         if (
                             self.choices_para[choice_num].text.upper()
                             != answer_text.upper()
                         ):
                             highlight_paragraph_text(para, WD_COLOR_INDEX.YELLOW)
-                            if self.error_logger is not None:
-                                self.error_logger.log_error(
-                                    "Answer line doesn't match choice."
-                                )
+                            self.log_error("Answer line doesn't match choice.")
 
             # if we made it here, we found everything.
             self.found_all = True
 
-    def format(self):
-        """Takes a preprocessed question cell
-        and returns a cell containing a properly-formatted
-        Science Bowl question.
-
-        Returns
-        -------
-        _Cell
-        """
-        for para in self.cell.paragraphs:
-
-            if self.state is QuestionFormatterState.Q_START:
-                self._start_handler(para)
-
-            elif self.state is QuestionFormatterState.STEM_END:
-                choice_match = self._choices_re.match(para.text)
-                answer_match = self._answer_re.match(para.text)
-
-                if choice_match:
-                    if self.q_type is QuestionType.SHORT_ANSWER:
-                        self.q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
-                        if self.error_logger is not None:
-                            self.error_logger.log_error(
-                                "Question type is SA, but has choices."
-                            )
-                        self.q_type = QuestionType.MULTIPLE_CHOICE
-                    self.state = QuestionFormatterState.CHOICES
-                    self._choice_handler(para)
-
-                elif answer_match:
-                    if self.q_type is QuestionType.MULTIPLE_CHOICE:
-                        self.q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
-                        if self.error_logger is not None:
-                            self.error_logger.log_error(
-                                "Question type is MC, but has no choices."
-                            )
-                        self.q_type = QuestionType.SHORT_ANSWER
-                    self.state = QuestionFormatterState.ANSWER
-                    self._answer_handler(para)
-
-            elif self.state is QuestionFormatterState.CHOICES:
-
-                self._choice_handler(para)
-
-            elif self.state is QuestionFormatterState.ANSWER:
-
-                self._answer_handler(para)
-
-        if not self.found_all:
-            # if we get through the entire cell without finding all parts of
-            # of the question, highlight the cell red
-            highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
-            if self.error_logger is not None:
-                self.error_logger.log_error(
-                    f"Couldn't parse question, was looking for {self.state}"
-                )
-        else:
-            if self.error_logger is not None:
-                self.error_logger.stats[self.q_type.value] += 1
-
-        return self.cell
-
 
 class TuBCellFormatter(CellFormatter):
-    tub_possible = _compile(r"\s*(TOSS-UP|BONUS|VISUAL BONUS|TU|B|VB)\b")
-
     def __init__(self, cell: _Cell, error_logger: Optional[ErrorLogger] = None):
         self.cell = cell
         self.error_logger = error_logger
 
     def format(self) -> _Cell:
-        tub_match = self.tub_possible.match(self.cell.text)
+        tub_match = TUB_RE.match(self.cell.text)
 
         if tub_match:
             put = TossUpBonus.from_string(tub_match.group(1)).value
@@ -420,27 +400,21 @@ class TuBCellFormatter(CellFormatter):
 
         # if a match can't be found, highlight the cell red
         else:
-            highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
-            if self.error_logger is not None:
-                self.error_logger.log_error(
-                    "Question must be a toss-up, bonus, or visual bonus."
-                )
+            self.log_error(
+                "Question must be a toss-up, bonus, or visual bonus.", level=2
+            )
 
         return self.cell
 
 
 class SubjectCellFormatter(CellFormatter):
-    subject_possible = _compile(
-        r"\s*(BIOLOGY|B|CHEMISTRY|C|EARTH AND SPACE|ES|ENERGY|EN|MATH|M|PHYSICS|P)\b"
-    )
-
     def __init__(self, cell: _Cell, error_logger: Optional[ErrorLogger] = None):
         self.cell = cell
         self.error_logger = error_logger
 
     def format(self):
 
-        subject_match = self.subject_possible.match(self.cell.text)
+        subject_match = SUBJECT_RE.match(self.cell.text)
 
         if subject_match:
             put = Subject.from_string(subject_match.group(1)).value
@@ -452,9 +426,7 @@ class SubjectCellFormatter(CellFormatter):
             highlight_cell_text(self.cell, None)
         # if a match can't be found, highlight the cell red
         else:
-            highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
-            if self.error_logger is not None:
-                self.error_logger.log_error("Invalid subject.")
+            self.log_error("Invalid subject.", level=2)
 
         return self.cell
 
@@ -470,9 +442,7 @@ class DifficultyFormatter(CellFormatter):
             try:
                 int(self.cell.text)
             except ValueError:
-                highlight_cell_text(self.cell, WD_COLOR_INDEX.RED)
-                if self.error_logger is not None:
-                    self.error_logger.log_error("LOD should be blank or an integer.")
+                self.log_error("LOD should be blank or an integer.", level=2)
 
         return self.cell
 
