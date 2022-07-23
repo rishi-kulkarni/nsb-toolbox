@@ -1,6 +1,6 @@
 name: Test, Build, and Upload
 
-on: 
+on:
   release:
     types: [published]
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: Run tests
-        run: python -m unittest discover
+        run: pytest
 
       - name: Build
         run: |
@@ -30,6 +30,6 @@ jobs:
         env:
           TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: | 
+        run: |
           pip install --upgrade twine
           twine upload --skip-existing dist/*
