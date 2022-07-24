@@ -192,9 +192,6 @@ def split_run_at(par: Paragraph, run: Run, split_at: int):
     """
     txt = run.text
 
-    if not isinstance(split_at, int):
-        raise ValueError("Split positions must be integer numbers")
-
     split_at %= len(txt)
 
     left, right = [txt[:split_at], txt[split_at:]]

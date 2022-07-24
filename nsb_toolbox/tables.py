@@ -2,13 +2,13 @@ import re
 from abc import ABC, abstractclassmethod
 from enum import Enum
 from functools import partial
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Tuple
 
 import docx.document
 from docx import Document
 from docx.enum.text import WD_COLOR_INDEX
 from docx.shared import Inches, Pt
-from docx.table import _Cell, _Column
+from docx.table import _Cell
 from docx.text.paragraph import Paragraph
 
 from .classes import ErrorLogger, QuestionType, Subject, TossUpBonus
@@ -226,9 +226,7 @@ class QuestionCellFormatter(CellFormatter):
             _HANDLERS[self.state](para)
 
         if not self.found_all:
-            self.log_error(
-                f"Couldn't parse question, was looking for {self.state}", level=2
-            )
+            self.log_error(f"Parsing failed while looking for {self.state}", level=2)
 
         else:
             if self.error_logger is not None:
@@ -270,6 +268,7 @@ class QuestionCellFormatter(CellFormatter):
                 # with W) or ANSWER:
                 if CHOICES_RE.match(next_para_text) or ANSWER_RE.match(next_para_text):
                     self.log_error("Couldn't parse question.", level=2)
+                    return None
 
                 else:
                     move_runs_to_end_of_para(next_para, para)
@@ -325,7 +324,13 @@ class QuestionCellFormatter(CellFormatter):
             else:
                 # same problem as above, it is possible that someone
                 # italicized half of the choice start.
-                self.log_error("Couldn't parse question.", level=2)
+                self.log_error(
+                    (
+                        "Couldn't parse question. Check that the choices are"
+                        " formatted correctly"
+                    ),
+                    level=2,
+                )
                 return None
 
             # if we just found Z), we're done looking for choices
@@ -350,29 +355,34 @@ class QuestionCellFormatter(CellFormatter):
                 answer_text = para.text.replace("ANSWER: ", "", 1)
 
                 test_choice_match = TEST_CHOICE_RE.match(answer_text)
-                if test_choice_match:
-                    # if answer line is a single letter, copy the text of
-                    # the choice over to the answer line
-                    if test_choice_match.span()[1] == len(answer_text):
-                        test_choice = test_choice_match.group(1)
-                        if not test_choice.endswith(")"):
-                            test_choice += ")"
-                        correct_para = self.choices_para[CHOICES.index(test_choice)]
-                        para.text = "ANSWER: "
-                        for run in correct_para.runs:
-                            new_run = para.add_run(run.text.upper())
-                            copy_run_formatting(run, new_run)
-                        fuse_consecutive_runs(para)
-                    # otherwise, check that the answer line text matches the choice.
-                    # if it doesn't raise a linting error.
-                    else:
-                        choice_num = CHOICES.index(test_choice_match.group(1))
-                        if (
-                            self.choices_para[choice_num].text.upper()
-                            != answer_text.upper()
-                        ):
-                            highlight_paragraph_text(para, WD_COLOR_INDEX.YELLOW)
-                            self.log_error("Answer line doesn't match choice.")
+                if not test_choice_match:
+                    self.log_error(
+                        "Found answer line, but it does not contain W, X, Y, or Z."
+                    )
+                    return None
+
+                # if answer line is a single letter, copy the text of
+                # the choice over to the answer line
+                if test_choice_match.span()[1] == len(answer_text):
+                    test_choice = test_choice_match.group(1)
+                    if not test_choice.endswith(")"):
+                        test_choice += ")"
+                    correct_para = self.choices_para[CHOICES.index(test_choice)]
+                    para.text = "ANSWER: "
+                    for run in correct_para.runs:
+                        new_run = para.add_run(run.text.upper())
+                        copy_run_formatting(run, new_run)
+                    fuse_consecutive_runs(para)
+                # otherwise, check that the answer line text matches the choice.
+                # if it doesn't raise a linting error.
+                else:
+                    choice_num = CHOICES.index(test_choice_match.group(1))
+                    if (
+                        self.choices_para[choice_num].text.upper()
+                        != answer_text.upper()
+                    ):
+                        highlight_paragraph_text(para, WD_COLOR_INDEX.YELLOW)
+                        self.log_error("Answer line doesn't match choice.")
 
             # if we made it here, we found everything.
             self.found_all = True
@@ -447,30 +457,31 @@ class DifficultyFormatter(CellFormatter):
         return self.cell
 
 
-def format_column(
-    nsb_table_column: _Column,
-    formatter: Optional[CellFormatter],
+def format_cells(
+    cells: Iterable[_Cell],
+    formatter: CellFormatter,
     error_logger: Optional[ErrorLogger] = None,
-) -> _Column:
-    """Utility function that applies a formatter to every cell in a column.
+) -> Iterable[_Cell]:
+    """Utility function that applies a formatter to every cell in a collection
+    of cells.
 
     Parameters
     ----------
-    nsb_table_column : _Column
+    nsb_table_column : Iterable[_Cell]
     formatter : CellFormatter instance
     error_logger : Optional[ErrorLogger], optional
 
     Returns
     -------
-    _Column
+    Iterable[_Cell] : formatted cells
     """
-    for idx, cell in enumerate(nsb_table_column):
+    for idx, cell in enumerate(cells):
         cell = preprocess_cell(cell)
         if error_logger is not None:
             error_logger.set_row(idx + 1)
         if cell.text.strip() != "" and formatter:
             formatter(cell, error_logger=error_logger).format()
-    return nsb_table_column
+    return cells
 
 
 def format_table(
@@ -513,7 +524,7 @@ def format_table(
     )
 
     for col_name in cols_to_format:
-        format_column(
+        format_cells(
             [_cells[i] for i in col_iter(COL_MAPPING[col_name])],
             FORMATTERS.get(col_name, None),
             error_logger,
