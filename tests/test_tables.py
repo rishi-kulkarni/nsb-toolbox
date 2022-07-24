@@ -1,4 +1,3 @@
-import unittest
 from pathlib import Path
 
 import pytest
@@ -136,6 +135,36 @@ class TestTUBCellFormatterErrors:
 
 
 @pytest.fixture
+def format_difficulty_rows():
+    test_data = Document(data_dir / "test_LOD.docx")
+    return test_data.tables[0].rows
+
+
+@pytest.mark.parametrize("cell_idx", [0, 1, 2, 3])
+class TestDifficultyFormatter:
+    def test_expected_test(self, format_difficulty_rows, cell_idx):
+
+        EXPECTED_TEXT = (
+            "1",
+            "2",
+            "3",
+            "",
+        )
+        cell = format_difficulty_rows[0].cells[cell_idx]
+        formatter = tables.DifficultyFormatter(cell)
+        assert formatter.format().text == EXPECTED_TEXT[cell_idx]
+
+    def test_difficulty_errors(self, format_difficulty_rows, cell_idx):
+
+        cell = format_difficulty_rows[1].cells[cell_idx]
+        formatter = tables.DifficultyFormatter(cell)
+        test_cell = formatter.format()
+        assert (
+            test_cell.paragraphs[0].runs[0].font.highlight_color == WD_COLOR_INDEX.RED
+        )
+
+
+@pytest.fixture
 def format_subject_rows():
     test_data = Document(data_dir / "test_subject.docx")
     return test_data.tables[0].rows
@@ -210,9 +239,25 @@ class TestFormatSubjectErrors:
         assert test_run.font.highlight_color == WD_COLOR_INDEX.RED
 
 
-class TestQuestionFormatter(unittest.TestCase):
+@pytest.fixture
+def format_question_rows():
     test_data = Document(data_dir / "test_question_parser.docx")
+    return test_data.tables[0].rows
 
+
+@pytest.mark.parametrize(
+    "cell_idx",
+    [0, 1, 2, 3, 4, 5],
+    ids=[
+        "Properly formatted",
+        "Extra whitespace before stem",
+        "Extra whitespace paragraphs",
+        "Abbreviated",
+        "Linebreak",
+        "Linebreak with extra whitespace",
+    ],
+)
+class TestQuestionFormat:
     def _extract_cell_text(self, cell):
         ret = []
         for para in cell.paragraphs:
@@ -223,176 +268,296 @@ class TestQuestionFormatter(unittest.TestCase):
 
         return ret
 
-    def test_short_answer(self):
+    @pytest.mark.parametrize(
+        "force_capitalize", [True, False], ids=["+capitalize", "-capitalize"]
+    )
+    def test_short_answer(self, format_question_rows, cell_idx, force_capitalize):
+        """This makes sure that recognizable Short Answer questions
+        are properly formatted."""
+        if force_capitalize:
+            expected = [
+                ["Short Answer", "    This is a well-formatted question."],
+                [""],
+                ["ANSWER: IT SHOULD BE UNCHANGED"],
+            ]
+        else:
+            expected = [
+                ["Short Answer", "    This is a well-formatted question."],
+                [""],
+                ["ANSWER: it should be unchanged"],
+            ]
+
+        cell = format_question_rows[0].cells[cell_idx]
+
+        q_parser = tables.QuestionCellFormatter(
+            tables.preprocess_cell(cell), force_capitalize=force_capitalize
+        )
+        test_text = self._extract_cell_text(q_parser.format())
+        assert test_text == expected
+        assert cell.paragraphs[-1].runs[0].font.highlight_color is None
+
+    @pytest.mark.parametrize(
+        "force_capitalize", [True, False], ids=["+capitalize", "-capitalize"]
+    )
+    def test_multiple_choice_answer_given(
+        self, format_question_rows, cell_idx, force_capitalize
+    ):
+        """This makes sure that recognizable Short Answer questions
+        are properly formatted."""
+        if force_capitalize:
+            expected = [
+                ["Multiple Choice", "    This is a well-formatted question."],
+                ["W) This is the W) choice"],
+                ["X) This is the X) choice"],
+                ["Y) This is the Y) choice"],
+                ["Z) This is the Z) choice"],
+                [""],
+                ["ANSWER: W) THIS IS THE W) CHOICE"],
+            ]
+        else:
+            expected = [
+                ["Multiple Choice", "    This is a well-formatted question."],
+                ["W) This is the W) choice"],
+                ["X) This is the X) choice"],
+                ["Y) This is the Y) choice"],
+                ["Z) This is the Z) choice"],
+                [""],
+                ["ANSWER: W) this is the w) choice"],
+            ]
+
+        cell = format_question_rows[1].cells[cell_idx]
+
+        q_parser = tables.QuestionCellFormatter(
+            tables.preprocess_cell(cell), force_capitalize=force_capitalize
+        )
+        test_text = self._extract_cell_text(q_parser.format())
+        assert test_text == expected
+        assert cell.paragraphs[-1].runs[0].font.highlight_color is None
+
+    def test_multiple_choice_fill_answer(self, format_question_rows, cell_idx):
         """This makes sure that recognizable Short Answer questions
         are properly formatted."""
         expected = [
-            ["Short Answer", "    This is a well-formatted question."],
+            ["Multiple Choice", "    This is a well-formatted question."],
+            ["W) This is the W) choice"],
+            ["X) This is the X) choice"],
+            ["Y) This is the Y) choice"],
+            ["Z) This is the Z) choice"],
             [""],
-            ["ANSWER: IT SHOULD BE UNCHANGED"],
+            ["ANSWER: W) THIS IS THE W) CHOICE"],
         ]
 
-        cells = self.test_data.tables[0].rows[0].cells
+        cell = format_question_rows[2].cells[cell_idx]
 
-        for cell in cells:
-            q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
-            test_text = self._extract_cell_text(q_parser.format())
-            self.assertEqual(test_text, expected)
-            self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
+        q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
+        test_text = self._extract_cell_text(q_parser.format())
+        assert test_text == expected
+        assert cell.paragraphs[-1].runs[0].font.highlight_color is None
 
-    def test_multiple_choice(self):
-        """This makes sure that recognizable Multiple Choice questions
+    @pytest.mark.parametrize(
+        "force_capitalize", [True, False], ids=["+capitalize", "-capitalize"]
+    )
+    def test_SA_intentional_line_break_handling(
+        self, format_question_rows, cell_idx, force_capitalize
+    ):
+        """This makes sure that recognizable Short Answer questions
         are properly formatted."""
-        expected = [
-            ["Multiple Choice", "    This is a well-formatted question."],
-            ["W) This is the W) choice"],
-            ["X) This is the X) choice"],
-            ["Y) This is the Y) choice"],
-            ["Z) This is the Z) choice"],
-            [""],
-            ["ANSWER: W) THIS IS THE W) CHOICE"],
-        ]
+        if force_capitalize:
+            expected = [
+                ["Short Answer", "    This is a well-formatted question that is"],
+                ["split across multiple lines on purpose"],
+                [""],
+                ["ANSWER: IT SHOULD BE UNCHANGED"],
+            ]
+        else:
+            expected = [
+                ["Short Answer", "    This is a well-formatted question that is"],
+                ["split across multiple lines on purpose"],
+                [""],
+                ["ANSWER: it should be unchanged"],
+            ]
 
-        cells = self.test_data.tables[0].rows[1].cells
+        cell = format_question_rows[3].cells[cell_idx]
 
-        for cell in cells:
-            q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
-            test_text = self._extract_cell_text(q_parser.format())
-            self.assertEqual(test_text, expected)
-            self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
+        q_parser = tables.QuestionCellFormatter(
+            tables.preprocess_cell(cell), force_capitalize=force_capitalize
+        )
+        test_text = self._extract_cell_text(q_parser.format())
+        assert test_text == expected
+        assert cell.paragraphs[-1].runs[0].font.highlight_color is None
 
-    def test_no_caps_multiple_choice(self):
-        """This makes sure that Multiple Choice questions with a given answer
-        don't have their answer auto-capitalized."""
+    @pytest.mark.parametrize(
+        "force_capitalize", [True, False], ids=["+capitalize", "-capitalize"]
+    )
+    def test_MC_intentional_line_break_handling(
+        self, format_question_rows, cell_idx, force_capitalize
+    ):
+        """This makes sure that recognizable Short Answer questions
+        are properly formatted."""
+        if force_capitalize:
+            expected = [
+                ["Multiple Choice", "    This is a well-formatted question."],
+                ["W) This is the W) choice"],
+                ["X) This is the X) choice"],
+                ["Y) This is the Y) choice"],
+                ["Z) This is the Z) choice and it is"],
+                ["split across multiple lines on purpose"],
+                [""],
+                ["ANSWER: W) THIS IS THE W) CHOICE"],
+            ]
+        else:
+            expected = [
+                ["Multiple Choice", "    This is a well-formatted question."],
+                ["W) This is the W) choice"],
+                ["X) This is the X) choice"],
+                ["Y) This is the Y) choice"],
+                ["Z) This is the Z) choice and it is"],
+                ["split across multiple lines on purpose"],
+                [""],
+                ["ANSWER: W) this is the w) choice"],
+            ]
 
-        expected = [
-            ["Multiple Choice", "    This is a well-formatted question."],
-            ["W) This is the W) choice"],
-            ["X) This is the X) choice"],
-            ["Y) This is the Y) choice"],
-            ["Z) This is the Z) choice"],
-            [""],
-            ["ANSWER: W) this is the w) choice"],
-        ]
+        cell = format_question_rows[4].cells[cell_idx]
 
-        cells = self.test_data.tables[0].rows[4].cells
+        q_parser = tables.QuestionCellFormatter(
+            tables.preprocess_cell(cell), force_capitalize=force_capitalize
+        )
+        test_text = self._extract_cell_text(q_parser.format())
+        assert test_text == expected
+        assert cell.paragraphs[-1].runs[0].font.highlight_color is None
 
-        for cell in cells[:1]:
-            q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
-            test_text = self._extract_cell_text(q_parser.format())
-            self.assertEqual(test_text, expected)
-            self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
 
-    def test_force_capitalize_multiple_choice(self):
-        """This makes sure that forced capitalization works on
-        Multiple Choice questions."""
-
-        expected = [
-            ["Multiple Choice", "    This is a well-formatted question."],
-            ["W) This is the W) choice"],
-            ["X) This is the X) choice"],
-            ["Y) This is the Y) choice"],
-            ["Z) This is the Z) choice"],
-            [""],
-            ["ANSWER: W) THIS IS THE W) CHOICE"],
-        ]
-
-        cells = self.test_data.tables[0].rows[5].cells
-
-        for cell in cells[:1]:
-            q_parser = tables.QuestionCellFormatter(
-                tables.preprocess_cell(cell), force_capitalize=True
-            )
-            test_text = self._extract_cell_text(q_parser.format())
-            self.assertEqual(test_text, expected)
-            self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
-
-    def test_force_capitalize_short_answer(self):
-        """This makes sure that forced capitalization works on
-        Short Answer questions."""
-
-        expected = [
-            ["Short Answer", "    This is a well-formatted question."],
-            [""],
-            ["ANSWER: IT SHOULD BE UNCHANGED"],
-        ]
-
-        cells = self.test_data.tables[0].rows[6].cells
-
-        for cell in cells[:1]:
-            q_parser = tables.QuestionCellFormatter(
-                tables.preprocess_cell(cell), force_capitalize=True
-            )
-            test_text = self._extract_cell_text(q_parser.format())
-            self.assertEqual(test_text, expected)
-            self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
-
-    def test_line_break_short_answer(self):
-        """This makes sure that SA questions with a line break between the question type
-        and the stem are handled properly."""
-
-        expected = [
-            ["Short Answer", "    This is a well-formatted question."],
-            [""],
-            ["ANSWER: IT SHOULD BE UNCHANGED"],
-        ]
-
-        cells = self.test_data.tables[0].rows[7].cells
-
-        for cell in cells[:1]:
-            q_parser = tables.QuestionCellFormatter(
-                tables.preprocess_cell(cell),
-            )
-            test_text = self._extract_cell_text(q_parser.format())
-            self.assertEqual(test_text, expected)
-            self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
-
-    def test_line_break_multiple_choice(self):
-        """This makes sure that MC questions with a line break between the question type
-        and the stem are handled properly."""
-
-        expected = [
-            ["Multiple Choice", "    This is a well-formatted question."],
-            ["W) This is the W) choice"],
-            ["X) This is the X) choice"],
-            ["Y) This is the Y) choice"],
-            ["Z) This is the Z) choice"],
-            [""],
-            ["ANSWER: W) THIS IS THE W) CHOICE"],
-        ]
-
-        cells = self.test_data.tables[0].rows[8].cells
-
-        for cell in cells[:1]:
-            q_parser = tables.QuestionCellFormatter(
-                tables.preprocess_cell(cell),
-            )
-            test_text = self._extract_cell_text(q_parser.format())
-            self.assertEqual(test_text, expected)
-            self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
-
-    def test_question_type_warning(self):
+class TestQuestionFormatterErrors:
+    @pytest.mark.parametrize(
+        "cell_idx",
+        [0, 1],
+        ids=["Incorrectly labeled MC", "Incorrectly labeled SA"],
+    )
+    def test_question_type_warning(self, format_question_rows, cell_idx):
         """Tests that mislabeled question types get warnings."""
-        cells = self.test_data.tables[0].rows[2].cells
+        cell = format_question_rows[5].cells[cell_idx]
 
-        for cell in cells:
-            q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
-            test_cell = q_parser.format()
-            self.assertEqual(
-                test_cell.paragraphs[0].runs[0].font.highlight_color,
-                WD_COLOR_INDEX.YELLOW,
-            )
-            self.assertEqual(cell.paragraphs[-1].runs[0].font.highlight_color, None)
+        q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
+        test_cell = q_parser.format()
+        # check that qtype run is highlighted
+        assert (
+            test_cell.paragraphs[0].runs[0].font.highlight_color
+            == WD_COLOR_INDEX.YELLOW
+        )
+        # check that other runs aren't highlighted
+        assert cell.paragraphs[-1].runs[0].font.highlight_color is None
 
-    def test_answer_line_warning(self):
+    @pytest.mark.parametrize(
+        "cell_idx",
+        [0, 1, 2, 3, 4, 5],
+        ids=[
+            "Properly formatted",
+            "Extra whitespace before stem",
+            "Extra whitespace paragraphs",
+            "Abbreviated",
+            "Linebreak",
+            "Linebreak with extra whitespace",
+        ],
+    )
+    def test_answer_line_warning(self, format_question_rows, cell_idx):
         """Tests that answer lines that don't match choices in
         MC questions get warnings."""
-        cells = self.test_data.tables[0].rows[3].cells
+        cell = format_question_rows[6].cells[cell_idx]
 
-        for cell in cells:
-            q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
-            test_cell = q_parser.format()
-            self.assertEqual(
-                test_cell.paragraphs[-1].runs[0].font.highlight_color,
-                WD_COLOR_INDEX.YELLOW,
-            )
+        q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
+        test_cell = q_parser.format()
+        assert (
+            test_cell.paragraphs[-1].runs[0].font.highlight_color
+            == WD_COLOR_INDEX.YELLOW
+        )
+
+    @pytest.mark.parametrize(
+        "cell_idx",
+        [0, 1, 2, 3, 4],
+        ids=[
+            "MC without 4 choices",
+            "Question type split across multiple runs",
+            "Missing stem",
+            "Choice split across multiple runs",
+            "Answer choice doesn't match available choices",
+        ],
+    )
+    def test_malformed_question_error(self, format_question_rows, cell_idx):
+        cell = format_question_rows[7].cells[cell_idx]
+
+        q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
+        test_cell = q_parser.format()
+        assert (
+            test_cell.paragraphs[-1].runs[0].font.highlight_color == WD_COLOR_INDEX.RED
+        )
+
+
+@pytest.fixture(scope="module")
+def format_test_table():
+    doc = Document(data_dir / "test_format.docx")
+    tables.format_table(
+        doc,
+        cols_to_format=("TUB", "Subj", "Ques", "LOD", "Set", "Author", "Subcat"),
+        force_capitalize=False,
+    )
+    return doc.tables[0]
+
+
+@pytest.mark.parametrize(
+    "cell_idx",
+    [0, 1, 2, 3, 4, 5],
+    ids={
+        "Header",
+        "Question 1",
+        "Question 2",
+        "Question 3",
+        "Question 4",
+        "Question 5",
+    },
+)
+class TestFormat:
+    def test_tub_col(self, format_test_table, cell_idx):
+        expected = ["TUB", "TOSS-UP", "BONUS", "TOSS-UP", "BONUS", "TOSS-UP"]
+        expected_text = expected[cell_idx]
+
+        assert format_test_table.columns[0].cells[cell_idx].text == expected_text
+
+    def test_subj_col(self, format_test_table, cell_idx):
+        expected = [
+            "Subj",
+            "Chemistry",
+            "Biology",
+            "Earth and Space",
+            "Energy",
+            "Physics",
+        ]
+        expected_text = expected[cell_idx]
+
+        assert format_test_table.columns[1].cells[cell_idx].text == expected_text
+
+    def test_ques_col(self, format_test_table, cell_idx):
+        expected = [
+            "Ques",
+            "Short Answer    Question\n\nANSWER: answer",
+            "Short Answer    Question\n\nANSWER: ANSWER",
+            "Multiple Choice    Question\nW) w\nX) x\nY) y\nZ) z\n\nANSWER: Z) z",
+            "Multiple Choice    Question\nW) w\nX) x\nY) y\nZ) z\n\nANSWER: Z) Z",
+            "Multiple Choice    Question\nW) w\nX) x\nY) y\nZ) z\n\nANSWER: Z) Z",
+        ]
+
+        expected_text = expected[cell_idx]
+
+        assert format_test_table.columns[2].cells[cell_idx].text == expected_text
+
+    def test_lod_col(self, format_test_table, cell_idx):
+        expected = [
+            "LOD",
+            "1",
+            "2",
+            "3",
+            "4",
+            "",
+        ]
+        expected_text = expected[cell_idx]
+
+        assert format_test_table.columns[3].cells[cell_idx].text == expected_text
