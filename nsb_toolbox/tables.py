@@ -64,7 +64,7 @@ SUBJECT_RE = re.compile(
 )
 Q_TYPE_RE = re.compile(r"\s*(Short Answer|SA|Multiple Choice|MC)\s*", re.IGNORECASE)
 CHOICES_RE = re.compile(r"\s*([W|X|Y|Z]\))\s*", re.IGNORECASE)
-TEST_CHOICE_RE = re.compile(r"\s*([W|X|Y|Z]\)?)\s*", re.IGNORECASE)
+TEST_CHOICE_RE = re.compile(r"\s*([W|X|Y|Z])(?:\)?$|\).+)", re.IGNORECASE)
 ANSWER_RE = re.compile(r"\s*(ANSWER:)\s*", re.IGNORECASE)
 
 CHOICES = ("W)", "X)", "Y)", "Z)")
@@ -75,6 +75,7 @@ class QuestionFormatterState(Enum):
     STEM_END = 1
     CHOICES = 2
     ANSWER = 3
+    DONE = 4
 
 
 class CellFormatter(ABC):
@@ -200,13 +201,6 @@ class QuestionCellFormatter(CellFormatter):
         self.cell = cell
         self.force_capitalize = force_capitalize
 
-        self.state = QuestionFormatterState.Q_START
-        self.q_type = None
-        self.q_type_run = None
-        self.current_choice = 0
-        self.choices_para = {}
-        self.found_all = False
-
     def format(self):
         """Takes a preprocessed question cell
         and returns a cell containing a properly-formatted
@@ -216,16 +210,24 @@ class QuestionCellFormatter(CellFormatter):
         -------
         _Cell
         """
+
+        self.state = QuestionFormatterState.Q_START
+        self.q_type = None
+        self.q_type_run = None
+        self.current_choice = 0
+        self.choices_para = {}
+
         _HANDLERS = {
             QuestionFormatterState.Q_START: self._start_handler,
             QuestionFormatterState.STEM_END: self._stem_end_handler,
             QuestionFormatterState.CHOICES: self._choice_handler,
             QuestionFormatterState.ANSWER: self._answer_handler,
+            QuestionFormatterState.DONE: self._done_handler,
         }
         for para in self.cell.paragraphs:
             _HANDLERS[self.state](para)
 
-        if not self.found_all:
+        if self.state is not QuestionFormatterState.DONE:
             self.log_error(f"Parsing failed while looking for {self.state}", level=2)
 
         else:
@@ -341,51 +343,49 @@ class QuestionCellFormatter(CellFormatter):
     def _answer_handler(self, para: Paragraph):
 
         answer_match = ANSWER_RE.match(para.text)
-        if answer_match:
-            para.insert_paragraph_before("")
+        if not answer_match:
+            return
 
-            # if we're forcing capitalization, apply it now
-            if self.force_capitalize:
-                for run in para.runs:
-                    run.text = run.text.upper()
+        para.insert_paragraph_before("")
 
-            # for MC questions, additional checks to make sure
-            # answer line matches choice
-            if self.q_type is QuestionType.MULTIPLE_CHOICE:
-                answer_text = para.text.replace("ANSWER: ", "", 1)
+        # if we're forcing capitalization, apply it now
+        if self.force_capitalize:
+            for run in para.runs:
+                run.text = run.text.upper()
 
-                test_choice_match = TEST_CHOICE_RE.match(answer_text)
-                if not test_choice_match:
-                    self.log_error(
-                        "Found answer line, but it does not contain W, X, Y, or Z."
-                    )
-                    return None
+        # for MC questions, additional checks to make sure
+        # answer line matches choice
+        if self.q_type is QuestionType.MULTIPLE_CHOICE:
+            answer_text = para.text.replace("ANSWER: ", "", 1)
 
-                # if answer line is a single letter, copy the text of
-                # the choice over to the answer line
-                if test_choice_match.span()[1] == len(answer_text):
-                    test_choice = test_choice_match.group(1)
-                    if not test_choice.endswith(")"):
-                        test_choice += ")"
-                    correct_para = self.choices_para[CHOICES.index(test_choice)]
-                    para.text = "ANSWER: "
-                    for run in correct_para.runs:
-                        new_run = para.add_run(run.text.upper())
-                        copy_run_formatting(run, new_run)
-                    fuse_consecutive_runs(para)
-                # otherwise, check that the answer line text matches the choice.
-                # if it doesn't raise a linting error.
-                else:
-                    choice_num = CHOICES.index(test_choice_match.group(1))
-                    if (
-                        self.choices_para[choice_num].text.upper()
-                        != answer_text.upper()
-                    ):
-                        highlight_paragraph_text(para, WD_COLOR_INDEX.YELLOW)
-                        self.log_error("Answer line doesn't match choice.")
+            test_choice_match = TEST_CHOICE_RE.match(answer_text)
+            if not test_choice_match:
+                self.log_error(
+                    "Found answer line, but it does not contain W, X, Y, or Z."
+                )
+                return
 
-            # if we made it here, we found everything.
-            self.found_all = True
+            choice_num = CHOICES.index(test_choice_match.group(1) + ")")
+            # if answer line is a single letter with an optional ), copy the text of
+            # the correct choice over to the answer line
+            if test_choice_match.span()[1] <= test_choice_match.span(1)[1] + 1:
+                correct_para = self.choices_para[choice_num]
+                para.text = "ANSWER: "
+                for run in correct_para.runs:
+                    new_run = para.add_run(run.text.upper())
+                    copy_run_formatting(run, new_run)
+                fuse_consecutive_runs(para)
+            # otherwise, check that the answer line text matches the choice.
+            # if it doesn't raise a linting error.
+            else:
+                if self.choices_para[choice_num].text.upper() != answer_text.upper():
+                    highlight_paragraph_text(para, WD_COLOR_INDEX.YELLOW)
+                    self.log_error("Answer line doesn't match choice.")
+
+        self.state = QuestionFormatterState.DONE
+
+    def _done_handler(self, para: Paragraph):
+        return
 
 
 class TuBCellFormatter(CellFormatter):

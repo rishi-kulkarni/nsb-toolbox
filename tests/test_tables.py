@@ -473,13 +473,14 @@ class TestQuestionFormatterErrors:
 
     @pytest.mark.parametrize(
         "cell_idx",
-        [0, 1, 2, 3, 4],
+        [0, 1, 2, 3, 4, 5],
         ids=[
             "MC without 4 choices",
             "Question type split across multiple runs",
             "Missing stem",
             "Choice split across multiple runs",
             "Answer choice doesn't match available choices",
+            "Answer choice is two letters",
         ],
     )
     def test_malformed_question_error(self, format_question_rows, cell_idx):
