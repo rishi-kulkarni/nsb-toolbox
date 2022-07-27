@@ -82,11 +82,7 @@ class CellFormatter(ABC):
     """Helper class that ensures formatters are standardized."""
 
     @abstractclassmethod
-    def __init__(self, cell: _Cell, error_logger: Optional[ErrorLogger] = None):
-        """All CellFormatters take the same input arguments."""
-
-    @abstractclassmethod
-    def format(self):
+    def format(self, cell: _Cell) -> _Cell:
         """All CellFormatters have a format function."""
 
     def log_error(self, msg: str, level: int = 0):
@@ -211,28 +207,29 @@ class QuestionCellFormatter(CellFormatter):
         _Cell
         """
 
-        self.state = QuestionFormatterState.Q_START
-        self.q_type = None
-        self.q_type_run = None
-        self.current_choice = 0
-        self.choices_para = {}
+        self._state = QuestionFormatterState.Q_START
+        self._q_type = None
+        self._q_type_run = None
+        self._current_choice = 0
+        self._choices_para = {}
 
         _HANDLERS = {
             QuestionFormatterState.Q_START: self._start_handler,
             QuestionFormatterState.STEM_END: self._stem_end_handler,
             QuestionFormatterState.CHOICES: self._choice_handler,
             QuestionFormatterState.ANSWER: self._answer_handler,
-            QuestionFormatterState.DONE: self._done_handler,
         }
         for para in self.cell.paragraphs:
-            _HANDLERS[self.state](para)
+            if self._state is QuestionFormatterState.DONE:
+                break
+            _HANDLERS[self._state](para)
 
-        if self.state is not QuestionFormatterState.DONE:
-            self.log_error(f"Parsing failed while looking for {self.state}", level=2)
+        if self._state is not QuestionFormatterState.DONE:
+            self.log_error(f"Parsing failed while looking for {self._state}", level=2)
 
         else:
             if self.error_logger is not None:
-                self.error_logger.stats[self.q_type.value] += 1
+                self.error_logger.stats[self._q_type.value] += 1
 
         return self.cell
 
@@ -244,15 +241,15 @@ class QuestionCellFormatter(CellFormatter):
             run_match = Q_TYPE_RE.match(q_type_run.text)
 
             if run_match:
-                self.q_type = QuestionType.from_string(run_match.group(1))
+                self._q_type = QuestionType.from_string(run_match.group(1))
                 # if the run contains more than the question type, split
                 # the run into two
                 if run_match.span()[1] < len(q_type_run.text):
                     q_type_run, _ = split_run_at(para, q_type_run, run_match.span()[1])
 
-                q_type_run.text = self.q_type.value
+                q_type_run.text = self._q_type.value
                 q_type_run.italic = True
-                self.q_type_run = q_type_run
+                self._q_type_run = q_type_run
 
             else:
                 # unfortunately, if someone has italicized a single
@@ -279,7 +276,7 @@ class QuestionCellFormatter(CellFormatter):
             stem_run = para.runs[1]
             stem_run.text = f"    {stem_run.text.lstrip()}"
 
-            self.state = QuestionFormatterState.STEM_END
+            self._state = QuestionFormatterState.STEM_END
         else:
             pass
 
@@ -289,19 +286,19 @@ class QuestionCellFormatter(CellFormatter):
 
         # handle incorrectly labeled questions and divert to the proper handler
         if choice_match:
-            if self.q_type is QuestionType.SHORT_ANSWER:
-                self.q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+            if self._q_type is QuestionType.SHORT_ANSWER:
+                self._q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
                 self.log_error("Question type is SA, but has choices.")
-                self.q_type = QuestionType.MULTIPLE_CHOICE
-            self.state = QuestionFormatterState.CHOICES
+                self._q_type = QuestionType.MULTIPLE_CHOICE
+            self._state = QuestionFormatterState.CHOICES
             self._choice_handler(para)
 
         elif answer_match:
-            if self.q_type is QuestionType.MULTIPLE_CHOICE:
-                self.q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+            if self._q_type is QuestionType.MULTIPLE_CHOICE:
+                self._q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
                 self.log_error("Question type is MC, but has no choices.")
-                self.q_type = QuestionType.SHORT_ANSWER
-            self.state = QuestionFormatterState.ANSWER
+                self._q_type = QuestionType.SHORT_ANSWER
+            self._state = QuestionFormatterState.ANSWER
             self._answer_handler(para)
 
     def _choice_handler(self, para: Paragraph):
@@ -316,13 +313,13 @@ class QuestionCellFormatter(CellFormatter):
             if run_match:
                 # if we matched the wrong choice, replace it with
                 # the right choice
-                if run_match.group(1) != CHOICES[self.current_choice]:
+                if run_match.group(1) != CHOICES[self._current_choice]:
                     choice_run.text = choice_run.text.replace(
-                        run_match.group(1), CHOICES[self.current_choice], 1
+                        run_match.group(1), CHOICES[self._current_choice], 1
                     )
                 # save text and update the choice we're looking for
-                self.choices_para[self.current_choice] = para
-                self.current_choice += 1
+                self._choices_para[self._current_choice] = para
+                self._current_choice += 1
             else:
                 # same problem as above, it is possible that someone
                 # italicized half of the choice start.
@@ -336,9 +333,9 @@ class QuestionCellFormatter(CellFormatter):
                 return None
 
             # if we just found Z), we're done looking for choices
-            if self.current_choice == 4:
-                self.current_choice = 0
-                self.state = QuestionFormatterState.ANSWER
+            if self._current_choice == 4:
+                self._current_choice = 0
+                self._state = QuestionFormatterState.ANSWER
 
     def _answer_handler(self, para: Paragraph):
 
@@ -355,7 +352,7 @@ class QuestionCellFormatter(CellFormatter):
 
         # for MC questions, additional checks to make sure
         # answer line matches choice
-        if self.q_type is QuestionType.MULTIPLE_CHOICE:
+        if self._q_type is QuestionType.MULTIPLE_CHOICE:
             answer_text = para.text.replace("ANSWER: ", "", 1)
 
             test_choice_match = TEST_CHOICE_RE.match(answer_text)
@@ -369,7 +366,7 @@ class QuestionCellFormatter(CellFormatter):
             # if answer line is a single letter with an optional ), copy the text of
             # the correct choice over to the answer line
             if test_choice_match.span()[1] <= test_choice_match.span(1)[1] + 1:
-                correct_para = self.choices_para[choice_num]
+                correct_para = self._choices_para[choice_num]
                 para.text = "ANSWER: "
                 for run in correct_para.runs:
                     new_run = para.add_run(run.text.upper())
@@ -378,14 +375,11 @@ class QuestionCellFormatter(CellFormatter):
             # otherwise, check that the answer line text matches the choice.
             # if it doesn't raise a linting error.
             else:
-                if self.choices_para[choice_num].text.upper() != answer_text.upper():
+                if self._choices_para[choice_num].text.upper() != answer_text.upper():
                     highlight_paragraph_text(para, WD_COLOR_INDEX.YELLOW)
                     self.log_error("Answer line doesn't match choice.")
 
-        self.state = QuestionFormatterState.DONE
-
-    def _done_handler(self, para: Paragraph):
-        return
+        self._state = QuestionFormatterState.DONE
 
 
 class TuBCellFormatter(CellFormatter):
