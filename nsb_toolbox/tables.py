@@ -1,3 +1,4 @@
+from copy import deepcopy
 import re
 from abc import ABC, abstractclassmethod
 from enum import Enum
@@ -15,7 +16,6 @@ from .classes import ErrorLogger, QuestionType, Subject, TossUpBonus
 from .docx_utils import (
     clear_cell,
     column_indexer,
-    copy_run_formatting,
     fuse_consecutive_runs,
     highlight_cell_text,
     highlight_paragraph_text,
@@ -234,58 +234,46 @@ class QuestionCellFormatter(CellFormatter):
         return self.cell
 
     def _start_handler(self, para: Paragraph):
-        q_type_match = Q_TYPE_RE.match(para.text)
-        if q_type_match:
-            # the first run of the paragraph should contain the question start
-            q_type_run = para.runs[0]
-            run_match = Q_TYPE_RE.match(q_type_run.text)
+        if not Q_TYPE_RE.match(para.text):
+            return None
 
-            if run_match:
-                self._q_type = QuestionType.from_string(run_match.group(1))
-                # if the run contains more than the question type, split
-                # the run into two
-                if run_match.span()[1] < len(q_type_run.text):
-                    q_type_run, _ = split_run_at(para, q_type_run, run_match.span()[1])
+        q_type_run = para.runs[0]
+        # if the qtype is split across multiple runs, it won't parse
+        if not (run_match := Q_TYPE_RE.match(q_type_run.text)):
+            self.log_error("Couldn't parse question.", level=2)
+            return None
 
-                q_type_run.text = self._q_type.value
-                q_type_run.italic = True
-                self._q_type_run = q_type_run
+        self._q_type = QuestionType.from_string(run_match.group(1))
+        # if the run contains more than the question type, split
+        # the run into two
+        if run_match.span()[1] < len(q_type_run.text):
+            q_type_run, _ = split_run_at(q_type_run, run_match.span()[1])
 
-            else:
-                # unfortunately, if someone has italicized a single
-                # letter in the question start or something, we
-                # will have a problem. in this case, highlight
-                # the question.
+        q_type_run.text, q_type_run.italic = self._q_type.value, True
+        self._q_type_run = q_type_run
+
+        # if this para only has 1 run, the stem should be in the next paragraph.
+        if len(para.runs) == 1:
+            next_para = para._p.getnext()
+            next_para_text = "".join(_r.text for _r in next_para if _r.text)
+            # need to check if there even IS a stem - next paragraph shouldn't start
+            # with W) or ANSWER:
+            if CHOICES_RE.match(next_para_text) or ANSWER_RE.match(next_para_text):
                 self.log_error("Couldn't parse question.", level=2)
                 return None
 
-            # if this para only has 1 run, the stem should be in the next paragraph.
-            if len(para.runs) == 1:
-                next_para = para._p.getnext()
-                next_para_text = "".join(_r.text for _r in next_para if _r.text)
-                # need to check if there even IS a stem - next paragraph shouldn't start
-                # with W) or ANSWER:
-                if CHOICES_RE.match(next_para_text) or ANSWER_RE.match(next_para_text):
-                    self.log_error("Couldn't parse question.", level=2)
-                    return None
+            move_runs_to_end_of_para(next_para, para._p)
 
-                else:
-                    move_runs_to_end_of_para(next_para, para)
+        # left pad the first run of the stem
+        stem_run = para.runs[1]
+        stem_run.text = f"    {stem_run.text.lstrip()}"
 
-            # left pad the first run of the stem
-            stem_run = para.runs[1]
-            stem_run.text = f"    {stem_run.text.lstrip()}"
-
-            self._state = QuestionFormatterState.STEM_END
-        else:
-            pass
+        self._state = QuestionFormatterState.STEM_END
 
     def _stem_end_handler(self, para: Paragraph):
-        choice_match = CHOICES_RE.match(para.text)
-        answer_match = ANSWER_RE.match(para.text)
 
         # handle incorrectly labeled questions and divert to the proper handler
-        if choice_match:
+        if CHOICES_RE.match(para.text):
             if self._q_type is QuestionType.SHORT_ANSWER:
                 self._q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
                 self.log_error("Question type is SA, but has choices.")
@@ -293,7 +281,7 @@ class QuestionCellFormatter(CellFormatter):
             self._state = QuestionFormatterState.CHOICES
             self._choice_handler(para)
 
-        elif answer_match:
+        elif ANSWER_RE.match(para.text):
             if self._q_type is QuestionType.MULTIPLE_CHOICE:
                 self._q_type_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
                 self.log_error("Question type is MC, but has no choices.")
@@ -303,45 +291,38 @@ class QuestionCellFormatter(CellFormatter):
 
     def _choice_handler(self, para: Paragraph):
 
-        choice_match = CHOICES_RE.match(para.text)
+        if not CHOICES_RE.match(para.text):
+            return None
 
-        if choice_match:
+        # the first run should contain the choice
+        choice_run = para.runs[0]
+        if not (run_match := CHOICES_RE.match(choice_run.text)):
+            self.log_error(
+                (
+                    "Couldn't parse question. Check that the choices are"
+                    " formatted correctly"
+                ),
+                level=2,
+            )
+            return None
 
-            # the first run should contain the choice
-            choice_run = para.runs[0]
-            run_match = CHOICES_RE.match(choice_run.text)
-            if run_match:
-                # if we matched the wrong choice, replace it with
-                # the right choice
-                if run_match.group(1) != CHOICES[self._current_choice]:
-                    choice_run.text = choice_run.text.replace(
-                        run_match.group(1), CHOICES[self._current_choice], 1
-                    )
-                # save text and update the choice we're looking for
-                self._choices_para[self._current_choice] = para
-                self._current_choice += 1
-            else:
-                # same problem as above, it is possible that someone
-                # italicized half of the choice start.
-                self.log_error(
-                    (
-                        "Couldn't parse question. Check that the choices are"
-                        " formatted correctly"
-                    ),
-                    level=2,
-                )
-                return None
+        # if we matched the wrong choice, replace it with the right choice
+        if run_match.group(1) != CHOICES[self._current_choice]:
+            choice_run.text = choice_run.text.replace(
+                run_match.group(1), CHOICES[self._current_choice], 1
+            )
+        # save text and update the choice we're looking for
+        self._choices_para[self._current_choice] = para
+        self._current_choice += 1
 
-            # if we just found Z), we're done looking for choices
-            if self._current_choice == 4:
-                self._current_choice = 0
-                self._state = QuestionFormatterState.ANSWER
+        if self._current_choice == 4:
+            self._state = QuestionFormatterState.ANSWER
 
     def _answer_handler(self, para: Paragraph):
 
         answer_match = ANSWER_RE.match(para.text)
         if not answer_match:
-            return
+            return None
 
         para.insert_paragraph_before("")
 
@@ -355,12 +336,11 @@ class QuestionCellFormatter(CellFormatter):
         if self._q_type is QuestionType.MULTIPLE_CHOICE:
             answer_text = para.text.replace("ANSWER: ", "", 1)
 
-            test_choice_match = TEST_CHOICE_RE.match(answer_text)
-            if not test_choice_match:
+            if not (test_choice_match := TEST_CHOICE_RE.match(answer_text)):
                 self.log_error(
                     "Found answer line, but it does not contain W, X, Y, or Z."
                 )
-                return
+                return None
 
             choice_num = CHOICES.index(test_choice_match.group(1) + ")")
             # if answer line is a single letter with an optional ), copy the text of
@@ -369,8 +349,9 @@ class QuestionCellFormatter(CellFormatter):
                 correct_para = self._choices_para[choice_num]
                 para.text = "ANSWER: "
                 for run in correct_para.runs:
-                    new_run = para.add_run(run.text.upper())
-                    copy_run_formatting(run, new_run)
+                    run_copy = deepcopy(run._r)
+                    run_copy.text = run_copy.text.upper()
+                    para._p.append(run_copy)
                 fuse_consecutive_runs(para)
             # otherwise, check that the answer line text matches the choice.
             # if it doesn't raise a linting error.

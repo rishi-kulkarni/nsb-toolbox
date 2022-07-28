@@ -113,17 +113,13 @@ def split_soft_returns(para: Paragraph) -> Paragraph:
     idx = 0
     for run in para.runs:
         while (newline_loc := run.text.find("\n")) != -1:
-            run_1, run_2 = split_run_at(para, run, newline_loc)
+            _, run_2 = split_run_at(run, newline_loc)
             run_2.text = run_2.text[1:]  # remove the newline char
 
             # move all runs prior to this one to a new paragraph above
             new_para = para.insert_paragraph_before(" ")
-            target_run = new_para.runs[0]
-            for source_run in reversed(para.runs[: idx + 1]):
-                target_run._r.addnext(source_run._r)
+            new_para._p[:] = para._p[: idx + 1]
 
-            # delete the empty run at the start of the prior paragraph
-            delete_run(target_run)
             idx = 0
         idx += 1
     return para
@@ -176,12 +172,11 @@ def compare_run_styles(run_1: Run, run_2: Run) -> bool:
     )
 
 
-def split_run_at(par: Paragraph, run: Run, split_at: int):
+def split_run_at(run: Run, split_at: int):
     """Splits a run at a specified index.
 
     Parameters
     ----------
-    par : Paragraph
     run : Run
     split_at : int
         Index of split location in the run.
@@ -191,40 +186,28 @@ def split_run_at(par: Paragraph, run: Run, split_at: int):
     list of runs
     """
     txt = run.text
-
     split_at %= len(txt)
-
     left, right = [txt[:split_at], txt[split_at:]]
 
-    run.text = left
-    # create second run
-    run_2 = par.add_run(right)
-    # move second run to be after first run
-    run._r.addnext(run_2._r)
+    run_2 = deepcopy(run._r)
 
-    # copy first run formatting to run two
-    copy_run_formatting(run, run_2)
+    run.text, run_2.text = left, right
+
+    # move second run to be after first run
+    run._r.addnext(run_2)
 
     return [run, run_2]
 
 
-def copy_run_formatting(run_from: Run, run_to: Run):
-    """Copies formatting from one run to another.
+def move_runs_to_end_of_para(para_from: Paragraph, para_to: Paragraph) -> None:
+    """Moves every run from para_from to the end of para_to.
 
     Parameters
     ----------
-    run_from, run_to : Run
+    para_from : Paragraph
+    para_to : Paragraph
     """
-    run_to_rPr = run_to._r.get_or_add_rPr()
-    run_to_rPr.addnext(deepcopy(run_from._r.get_or_add_rPr()))
-    run_to._r.remove(run_to_rPr)
-
-
-def move_runs_to_end_of_para(para_from: Paragraph, para_to: Paragraph) -> None:
-    for run in para_from:
-        para_to_end = para_to.runs[-1]._r
-        para_to_end.addnext(run)
-
+    para_to.extend(para_from)
     para_from.getparent().remove(para_from)
 
 
@@ -260,22 +243,15 @@ def delete_run(run: Run):
 
 def clear_cell(cell: _Cell):
     """Deletes every paragraph in a cell except for the first, and makes the first
-    paragraph contain only an empty run of text.
+    paragraph contain only an empty run of text. Removes shading (and all other)
+    element attributes, as well.
 
     Parameters
     ----------
     cell : _Cell
     """
-    if len(cell.paragraphs) > 1:
-        for paragraph in cell.paragraphs[1:]:
-            delete_paragraph(paragraph)
-    first_para = cell.paragraphs[0]
-    if len(first_para.runs) > 1:
-        for run in first_para.runs[1:]:
-            delete_run(run)
-    elif len(first_para.runs) == 0:
-        first_para.add_run("")
-    first_para.runs[0].text = ""
+    cell._tc.clear()
+    cell.add_paragraph("").add_run("")
 
 
 def highlight_cell_text(cell: _Cell, color: WD_COLOR_INDEX):
