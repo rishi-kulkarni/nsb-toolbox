@@ -91,13 +91,13 @@ class TestTUBCellFormatter:
         expected_text = ["TOSS-UP", "BONUS", "VISUAL BONUS"]
         row = tub_test_doc.tables[0].rows[row_idx]
         for cell in row.cells:
-            formatted_cell = tables.TuBCellFormatter(cell, error_logger).format()
+            formatted_cell = tables.TuBCellFormatter(error_logger).format(cell)
             assert formatted_cell.text == expected_text[row_idx]
 
     def test_cell_has_single_paragraph(self, tub_test_doc, row_idx, error_logger):
         row = tub_test_doc.tables[0].rows[row_idx]
         for cell in row.cells:
-            formatted_cell = tables.TuBCellFormatter(cell, error_logger).format()
+            formatted_cell = tables.TuBCellFormatter(error_logger).format(cell)
             assert len(formatted_cell.paragraphs) == 1
 
     def test_paragraph_contains_one_run_with_normal_text(
@@ -105,7 +105,7 @@ class TestTUBCellFormatter:
     ):
         row = tub_test_doc.tables[0].rows[row_idx]
         for cell in row.cells:
-            formatted_cell = tables.TuBCellFormatter(cell, error_logger).format()
+            formatted_cell = tables.TuBCellFormatter(error_logger).format(cell)
             cell_runs = formatted_cell.paragraphs[0].runs
             assert len(cell_runs) == 1
             assert cell_runs[0].font.italic is None
@@ -118,7 +118,7 @@ class TestTUBCellFormatterErrors:
         row = tub_test_doc.tables[0].rows[3]
         for cell in row.cells:
             prior_text = cell.text
-            formatted_cell = tables.TuBCellFormatter(cell, error_logger).format()
+            formatted_cell = tables.TuBCellFormatter(error_logger).format(cell)
             after_text = formatted_cell.text
             assert prior_text == after_text
             if error_logger:
@@ -127,7 +127,7 @@ class TestTUBCellFormatterErrors:
     def test_unrecognizable_cell_is_highlighted(self, tub_test_doc, error_logger):
         row = tub_test_doc.tables[0].rows[3]
         for cell in row.cells:
-            formatted_cell = tables.TuBCellFormatter(cell, error_logger).format()
+            formatted_cell = tables.TuBCellFormatter(error_logger).format(cell)
             run = formatted_cell.paragraphs[0].runs[0]
             assert run.font.highlight_color == WD_COLOR_INDEX.RED
             if error_logger:
@@ -151,14 +151,14 @@ class TestDifficultyFormatter:
             "",
         )
         cell = format_difficulty_rows[0].cells[cell_idx]
-        formatter = tables.DifficultyFormatter(cell)
-        assert formatter.format().text == EXPECTED_TEXT[cell_idx]
+        formatter = tables.DifficultyFormatter()
+        assert formatter.format(cell).text == EXPECTED_TEXT[cell_idx]
 
     def test_difficulty_errors(self, format_difficulty_rows, cell_idx):
 
         cell = format_difficulty_rows[1].cells[cell_idx]
-        formatter = tables.DifficultyFormatter(cell)
-        test_cell = formatter.format()
+        formatter = tables.DifficultyFormatter()
+        test_cell = formatter.format(cell)
         assert (
             test_cell.paragraphs[0].runs[0].font.highlight_color == WD_COLOR_INDEX.RED
         )
@@ -203,14 +203,14 @@ class TestFormatSubject:
             "Energy",
         )
         cell = format_subject_rows[row_idx].cells[cell_idx]
-        formatter = tables.SubjectCellFormatter(cell)
-        assert formatter.format().text == EXPECTED_TEXT[row_idx]
+        formatter = tables.SubjectCellFormatter()
+        assert formatter.format(cell).text == EXPECTED_TEXT[row_idx]
 
     def test_cell_formatting(self, format_subject_rows, row_idx, cell_idx):
         cell = format_subject_rows[row_idx].cells[cell_idx]
-        formatter = tables.SubjectCellFormatter(cell)
+        formatter = tables.SubjectCellFormatter()
 
-        formatted_cell = formatter.format()
+        formatted_cell = formatter.format(cell)
         assert len(formatted_cell.paragraphs) == 1
         assert len(formatted_cell.paragraphs[0].runs) == 1
         assert formatted_cell.paragraphs[0].runs[0].font.italic is None
@@ -232,8 +232,8 @@ class TestFormatSubjectErrors:
         cell = format_subject_rows[6].cells[cell_idx]
 
         prior_text = cell.text
-        sformatter = tables.SubjectCellFormatter(cell)
-        test_run = sformatter.format().paragraphs[0].runs[0]
+        sformatter = tables.SubjectCellFormatter()
+        test_run = sformatter.format(cell).paragraphs[0].runs[0]
         after_text = cell.text
         assert prior_text == after_text
         assert test_run.font.highlight_color == WD_COLOR_INDEX.RED
@@ -289,10 +289,8 @@ class TestQuestionFormat:
 
         cell = format_question_rows[0].cells[cell_idx]
 
-        q_parser = tables.QuestionCellFormatter(
-            tables.preprocess_cell(cell), force_capitalize=force_capitalize
-        )
-        test_text = self._extract_cell_text(q_parser.format())
+        q_parser = tables.QuestionCellFormatter(force_capitalize=force_capitalize)
+        test_text = self._extract_cell_text(q_parser.preprocess_format(cell))
         assert test_text == expected
         assert cell.paragraphs[-1].runs[0].font.highlight_color is None
 
@@ -327,10 +325,8 @@ class TestQuestionFormat:
 
         cell = format_question_rows[1].cells[cell_idx]
 
-        q_parser = tables.QuestionCellFormatter(
-            tables.preprocess_cell(cell), force_capitalize=force_capitalize
-        )
-        test_text = self._extract_cell_text(q_parser.format())
+        q_parser = tables.QuestionCellFormatter(force_capitalize=force_capitalize)
+        test_text = self._extract_cell_text(q_parser.preprocess_format(cell))
         assert test_text == expected
         assert cell.paragraphs[-1].runs[0].font.highlight_color is None
 
@@ -349,8 +345,8 @@ class TestQuestionFormat:
 
         cell = format_question_rows[2].cells[cell_idx]
 
-        q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
-        test_text = self._extract_cell_text(q_parser.format())
+        q_parser = tables.QuestionCellFormatter()
+        test_text = self._extract_cell_text(q_parser.preprocess_format(cell))
         assert test_text == expected
         assert cell.paragraphs[-1].runs[0].font.highlight_color is None
 
@@ -379,10 +375,8 @@ class TestQuestionFormat:
 
         cell = format_question_rows[3].cells[cell_idx]
 
-        q_parser = tables.QuestionCellFormatter(
-            tables.preprocess_cell(cell), force_capitalize=force_capitalize
-        )
-        test_text = self._extract_cell_text(q_parser.format())
+        q_parser = tables.QuestionCellFormatter(force_capitalize=force_capitalize)
+        test_text = self._extract_cell_text(q_parser.preprocess_format(cell))
         assert test_text == expected
         assert cell.paragraphs[-1].runs[0].font.highlight_color is None
 
@@ -419,10 +413,8 @@ class TestQuestionFormat:
 
         cell = format_question_rows[4].cells[cell_idx]
 
-        q_parser = tables.QuestionCellFormatter(
-            tables.preprocess_cell(cell), force_capitalize=force_capitalize
-        )
-        test_text = self._extract_cell_text(q_parser.format())
+        q_parser = tables.QuestionCellFormatter(force_capitalize=force_capitalize)
+        test_text = self._extract_cell_text(q_parser.preprocess_format(cell))
         assert test_text == expected
         assert cell.paragraphs[-1].runs[0].font.highlight_color is None
 
@@ -437,8 +429,8 @@ class TestQuestionFormatterErrors:
         """Tests that mislabeled question types get warnings."""
         cell = format_question_rows[5].cells[cell_idx]
 
-        q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
-        test_cell = q_parser.format()
+        q_parser = tables.QuestionCellFormatter()
+        test_cell = q_parser.preprocess_format(cell)
         # check that qtype run is highlighted
         assert (
             test_cell.paragraphs[0].runs[0].font.highlight_color
@@ -464,8 +456,8 @@ class TestQuestionFormatterErrors:
         MC questions get warnings."""
         cell = format_question_rows[6].cells[cell_idx]
 
-        q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
-        test_cell = q_parser.format()
+        q_parser = tables.QuestionCellFormatter()
+        test_cell = q_parser.preprocess_format(cell)
         assert (
             test_cell.paragraphs[-1].runs[0].font.highlight_color
             == WD_COLOR_INDEX.YELLOW
@@ -486,8 +478,8 @@ class TestQuestionFormatterErrors:
     def test_malformed_question_error(self, format_question_rows, cell_idx):
         cell = format_question_rows[7].cells[cell_idx]
 
-        q_parser = tables.QuestionCellFormatter(tables.preprocess_cell(cell))
-        test_cell = q_parser.format()
+        q_parser = tables.QuestionCellFormatter()
+        test_cell = q_parser.preprocess_format(cell)
         assert (
             test_cell.paragraphs[-1].runs[0].font.highlight_color == WD_COLOR_INDEX.RED
         )
