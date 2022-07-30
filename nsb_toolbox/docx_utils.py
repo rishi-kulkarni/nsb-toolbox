@@ -211,7 +211,7 @@ def move_runs_to_end_of_para(para_from: Paragraph, para_to: Paragraph) -> None:
     para_from.getparent().remove(para_from)
 
 
-def shade_columns(column, shade: str):
+def shade_columns(column, shade: str) -> None:
     """Shades a list of cells in-place with a hex color value.
 
     Parameters
@@ -228,20 +228,20 @@ def shade_columns(column, shade: str):
         tcPr.append(tcVAlign)
 
 
-def delete_paragraph(paragraph: Paragraph):
+def delete_paragraph(paragraph: Paragraph) -> None:
     """Deletes a paragraph."""
     p = paragraph._element
     p.getparent().remove(p)
     p._p = p._element = None
 
 
-def delete_run(run: Run):
+def delete_run(run: Run) -> None:
     """Deletes a run."""
     p = run._r.getparent()
     p.remove(run._r)
 
 
-def clear_cell(cell: _Cell):
+def clear_cell(cell: _Cell) -> None:
     """Deletes every paragraph in a cell except for the first, and makes the first
     paragraph contain only an empty run of text. Removes shading (and all other)
     element attributes, as well.
@@ -254,7 +254,7 @@ def clear_cell(cell: _Cell):
     cell.add_paragraph("").add_run("")
 
 
-def highlight_cell_text(cell: _Cell, color: WD_COLOR_INDEX):
+def highlight_cell_text(cell: _Cell, color: WD_COLOR_INDEX) -> None:
     """Highlights all the text in a cell a given color. Used for
     providing linter warnings.
 
@@ -267,7 +267,7 @@ def highlight_cell_text(cell: _Cell, color: WD_COLOR_INDEX):
         highlight_paragraph_text(paragraph, color)
 
 
-def highlight_paragraph_text(para: Paragraph, color: WD_COLOR_INDEX):
+def highlight_paragraph_text(para: Paragraph, color: WD_COLOR_INDEX) -> None:
     """Highlights every run in a paragraph a given color.
 
     Parameters
@@ -277,6 +277,17 @@ def highlight_paragraph_text(para: Paragraph, color: WD_COLOR_INDEX):
     """
     for run in para.runs:
         run.font.highlight_color = color
+
+
+def capitalize_paragraph(para: Paragraph) -> None:
+    """Capitalizes all text in a paragraph.
+
+    Parameters
+    ----------
+    para : Paragraph
+    """
+    for run in para.runs:
+        run.text = run.text.upper()
 
 
 def column_indexer(
