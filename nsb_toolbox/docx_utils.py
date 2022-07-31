@@ -211,7 +211,7 @@ def move_runs_to_end_of_para(para_from: Paragraph, para_to: Paragraph) -> None:
     para_from.getparent().remove(para_from)
 
 
-def shade_columns(column, shade: str) -> None:
+def shade_cell(cell, shade: str) -> None:
     """Shades a list of cells in-place with a hex color value.
 
     Parameters
@@ -221,11 +221,10 @@ def shade_columns(column, shade: str) -> None:
     shade : str
         Hexadecimal color value
     """
-    for cell in column.cells:
-        tcPr = cell._tc.get_or_add_tcPr()
-        tcVAlign = OxmlElement("w:shd")
-        tcVAlign.set(qn("w:fill"), shade)
-        tcPr.append(tcVAlign)
+    tcPr = cell._tc.get_or_add_tcPr()
+    tcVAlign = OxmlElement("w:shd")
+    tcVAlign.set(qn("w:fill"), shade)
+    tcPr.append(tcVAlign)
 
 
 def delete_paragraph(paragraph: Paragraph) -> None:

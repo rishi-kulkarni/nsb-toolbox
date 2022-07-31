@@ -5,7 +5,6 @@ from docx import Document
 from docx.enum.text import WD_COLOR_INDEX
 from docx.shared import Pt
 from nsb_toolbox import tables
-from nsb_toolbox.classes import ErrorLogger
 
 data_dir = Path(__file__).parent / "test_data"
 
@@ -28,7 +27,8 @@ def initialize_params(request):
 @pytest.fixture(scope="module")
 def initialized_doc_with_table(initialize_params):
     nrows, subj, set_, name = initialize_params
-    return tables.initialize_table(nrows, subj=subj, set=set_, name=name)
+    raw = tables.RawQuestions.make(nrows, subj=subj, set=set_, name=name)
+    return raw.document
 
 
 @pytest.fixture(scope="module")
@@ -84,54 +84,50 @@ def tub_test_doc():
     return Document(data_dir / "test_TUB.docx")
 
 
-@pytest.mark.parametrize("error_logger", [None, ErrorLogger(verbosity=True)])
 @pytest.mark.parametrize("row_idx", [0, 1, 2], ids=["TOSS-UP", "BONUS", "VISUAL BONUS"])
 class TestTUBCellFormatter:
-    def test_formatted_text(self, tub_test_doc, row_idx, error_logger):
+    def test_formatted_text(self, tub_test_doc, row_idx):
         expected_text = ["TOSS-UP", "BONUS", "VISUAL BONUS"]
         row = tub_test_doc.tables[0].rows[row_idx]
         for cell in row.cells:
-            formatted_cell = tables.TuBCellFormatter(error_logger).format(cell)
+            formatted_cell = tables.TuBCellFormatter().format(cell)
             assert formatted_cell.text == expected_text[row_idx]
 
-    def test_cell_has_single_paragraph(self, tub_test_doc, row_idx, error_logger):
-        row = tub_test_doc.tables[0].rows[row_idx]
-        for cell in row.cells:
-            formatted_cell = tables.TuBCellFormatter(error_logger).format(cell)
-            assert len(formatted_cell.paragraphs) == 1
-
-    def test_paragraph_contains_one_run_with_normal_text(
-        self, tub_test_doc, row_idx, error_logger
+    def test_cell_has_single_paragraph(
+        self,
+        tub_test_doc,
+        row_idx,
     ):
         row = tub_test_doc.tables[0].rows[row_idx]
         for cell in row.cells:
-            formatted_cell = tables.TuBCellFormatter(error_logger).format(cell)
+            formatted_cell = tables.TuBCellFormatter().format(cell)
+            assert len(formatted_cell.paragraphs) == 1
+
+    def test_paragraph_contains_one_run_with_normal_text(self, tub_test_doc, row_idx):
+        row = tub_test_doc.tables[0].rows[row_idx]
+        for cell in row.cells:
+            formatted_cell = tables.TuBCellFormatter().format(cell)
             cell_runs = formatted_cell.paragraphs[0].runs
             assert len(cell_runs) == 1
             assert cell_runs[0].font.italic is None
             assert cell_runs[0].font.bold is None
 
 
-@pytest.mark.parametrize("error_logger", [None, ErrorLogger(verbosity=True)])
 class TestTUBCellFormatterErrors:
-    def test_unrecognizable_cell_text_is_unchanged(self, tub_test_doc, error_logger):
+    def test_unrecognizable_cell_text_is_unchanged(self, tub_test_doc):
         row = tub_test_doc.tables[0].rows[3]
         for cell in row.cells:
             prior_text = cell.text
-            formatted_cell = tables.TuBCellFormatter(error_logger).format(cell)
+            formatted_cell = tables.TuBCellFormatter().format(cell)
             after_text = formatted_cell.text
             assert prior_text == after_text
-            if error_logger:
-                assert len(error_logger.errors) > 0
 
-    def test_unrecognizable_cell_is_highlighted(self, tub_test_doc, error_logger):
+    def test_unrecognizable_cell_is_highlighted(self, tub_test_doc):
         row = tub_test_doc.tables[0].rows[3]
         for cell in row.cells:
-            formatted_cell = tables.TuBCellFormatter(error_logger).format(cell)
+            formatted_cell = tables.TuBCellFormatter().format(cell)
             run = formatted_cell.paragraphs[0].runs[0]
             assert run.font.highlight_color == WD_COLOR_INDEX.RED
-            if error_logger:
-                assert len(error_logger.errors) > 0
 
 
 @pytest.fixture
@@ -488,9 +484,7 @@ class TestQuestionFormatterErrors:
 @pytest.fixture(scope="module")
 def format_test_table():
     doc = Document(data_dir / "test_format.docx")
-    tables.format_table(
-        doc,
-        cols_to_format=("TUB", "Subj", "Ques", "LOD", "Set", "Author", "Subcat"),
+    tables.RawQuestions(doc).format(
         force_capitalize=False,
     )
     return doc.tables[0]

@@ -1,6 +1,5 @@
-from functools import cached_property, reduce
-from pathlib import Path
-from typing import Dict, List, Union
+from functools import reduce
+from typing import Optional
 from typing_extensions import Self
 
 import docx.table
@@ -8,14 +7,12 @@ import docx.document
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from nsb_toolbox.importers import load_doc
 
-from .classes import QuestionType, TossUpBonus
+from ._base_questions import BaseScienceBowlQuestions
 from .yamlparsers import ParsedQuestionSpec
-from .docx_utils import column_indexer
 
 
-class EditedQuestions:
+class EditedQuestions(BaseScienceBowlQuestions):
     """Represents an edited set of Science Bowl questions from a single subject
     with level of difficulty and subcategory assigned by the SME.
 
@@ -45,13 +42,9 @@ class EditedQuestions:
         Assigns the questions to a specification via a linear sum assignment.
     """
 
-    def __init__(self, document: docx.document.Document, dry_run: bool = False) -> Self:
+    def __init__(self, document: docx.document.Document) -> Self:
 
-        self.document = document
-        self.dry_run = dry_run
-
-        self._cells = self.document.tables[0]._cells
-        self._col_count = self.document.tables[0]._column_count
+        super().__init__(document)
 
         try:
             self.difficulties
@@ -64,31 +57,9 @@ class EditedQuestions:
                 ex,
             )
 
-    def save(self, path: Union[Path, str]):
-        """Saves the wrapped document to path.
-
-        Parameters
-        ----------
-        path : Union[Path, str]
-        """
-        self.document.save(path)
-
-    @classmethod
-    def from_docx_path(cls, path: Union[Path, str], dry_run: bool = False) -> Self:
-        """Generates a class instance from a path to a docx file.
-
-        Parameters
-        ----------
-        path : Union[Path, str]
-
-        Returns
-        -------
-        EditedQuestions
-        """
-        doc = load_doc(path)
-        return cls(doc, dry_run=dry_run)
-
-    def assign(self, question_spec: ParsedQuestionSpec):
+    def assign(
+        self, question_spec: ParsedQuestionSpec, dry_run: Optional[bool] = False
+    ):
         """Attempts to find a valid assignment of the questions to question_spec via a
         linear sum assignment. Upon success, writes the successful assignment to the
         question document. Otherwise, notifies the user which parts of the specification
@@ -98,6 +69,8 @@ class EditedQuestions:
         ----------
         question_spec : ParsedQuestionSpec
             Question specification read from a config file.
+        dry_run : Optional[bool]
+            If True, will not write assignments back to question file, by default False.
 
         Raises
         ------
@@ -118,105 +91,27 @@ class EditedQuestions:
             self._raise_assignment_failure(question_spec, assignment_costs)
 
         else:
-            self._write_assignment(question_spec, q_assignments, round_assignments)
-
-    @cached_property
-    def tubs(self) -> np.ndarray:
-        return np.array(
-            [
-                TossUpBonus(self._cells[i].text).value
-                for i in column_indexer(0, len(self._cells), self._col_count)
-            ],
-            dtype="<U20",
-        )
-
-    @cached_property
-    def difficulties(self) -> np.ndarray:
-        return np.array(
-            [
-                int(self._cells[i].text or -1)
-                for i in column_indexer(3, len(self._cells), self._col_count)
-            ]
-        )
-
-    @cached_property
-    def qtypes(self) -> np.ndarray:
-        return np.array(
-            [
-                QuestionType(self._cells[i].paragraphs[0].runs[0].text).value
-                for i in column_indexer(2, len(self._cells), self._col_count)
-            ],
-            dtype="<U20",
-        )
-
-    @cached_property
-    def subcategories(self) -> np.ndarray:
-        return np.array(
-            [
-                self._cells[i].text
-                for i in column_indexer(12, len(self._cells), self._col_count)
-            ],
-            dtype="<U20",
-        )
-
-    @cached_property
-    def writers(self) -> np.ndarray:
-        return np.array(
-            [
-                self._cells[i].text
-                for i in column_indexer(8, len(self._cells), self._col_count)
-            ],
-            dtype="<U100",
-        )
-
-    @cached_property
-    def stats(self) -> Dict[str, int]:
-        raw_values = np.array(
-            [
-                f"{set_.text:<10}{difficulty:^}{tub:>12}"
-                for set_, difficulty, tub in zip(
-                    self.sets, self.difficulties, self.tubs
-                )
-            ]
-        )
-        return {
-            val: count for val, count in zip(*np.unique(raw_values, return_counts=True))
-        }
-
-    @property
-    def sets(self) -> List[docx.table._Cell]:
-        return [
-            self._cells[i] for i in column_indexer(5, len(self._cells), self._col_count)
-        ]
-
-    @property
-    def rounds(self) -> List[docx.table._Cell]:
-        return [
-            self._cells[i] for i in column_indexer(6, len(self._cells), self._col_count)
-        ]
-
-    @property
-    def qletters(self) -> List[docx.table._Cell]:
-        return [
-            self._cells[i] for i in column_indexer(7, len(self._cells), self._col_count)
-        ]
+            self._write_assignment(
+                question_spec, q_assignments, round_assignments, dry_run
+            )
 
     def _write_assignment(
         self,
         question_spec: ParsedQuestionSpec,
         q_assignments: np.ndarray,
         round_assignments: np.ndarray,
+        dry_run: Optional[bool] = False,
     ):
         """In case of assignment success, write successful assignemnt to
         this question set."""
-        if not self.dry_run:
-            print("Found a successful set of assignments!")
+        if not dry_run:
+            print("\nFound a successful set of assignments!")
             for q_idx, spec_idx in zip(q_assignments, round_assignments):
                 self.sets[q_idx].text = question_spec.sets[spec_idx]
                 self.rounds[q_idx].text = question_spec.rounds[spec_idx]
                 self.qletters[q_idx].text = question_spec.qletters[spec_idx]
         else:
-            print("Not writing assignments as this is a dry run.")
+            print("\nNot writing assignments as this is a dry run.")
 
     def _raise_assignment_failure(
         self, question_spec: ParsedQuestionSpec, assignment_costs: np.ndarray
@@ -238,7 +133,10 @@ class EditedQuestions:
 
     def _report_stats(self, question_spec: ParsedQuestionSpec):
 
+        print("\nStatistics")
+        print(f"{'-':->43}")
         print(f"{'Set':<9}{'LOD':^}{'TUB':>10}{'Need':>11}{'Have':>10}")
+        print(f"{'-':->43}")
 
         for key in sorted(self.stats.keys() | question_spec.stats.keys()):
 
