@@ -1,3 +1,5 @@
+import logging
+
 from enum import Enum
 
 
@@ -102,39 +104,35 @@ class QuestionType(Enum):
             raise ValueError(f"{label} is not a valid Subject")
 
 
-class ErrorLogger:
-    def __init__(self, verbosity):
-        self.verbosity = verbosity
-        self.errors = []
-        self.row_number = None
+class RowContextFilter(logging.Filter):
 
-        self.stats = {
-            "TOSS-UP": 0,
-            "BONUS": 0,
-            "VISUAL BONUS": 0,
-            "Short Answer": 0,
-            "Multiple Choice": 0,
-        }
+    curr_row = None
+    _num_records = 0
 
-    def set_row(self, row_number):
-        self.row_number = row_number
+    def filter(self, record: logging.LogRecord) -> bool:
+        self._num_records += 1
+        record.row = self.curr_row
+        return True
 
-    def log_error(self, error_msg: str):
-        self.errors.append(f"Question {self.row_number}: {error_msg}")
 
-    def __repr__(self) -> str:
-        ret = None
-        if self.verbosity is True:
-            ret = "\n".join(self.errors)
-        else:
-            ret = f"Found {len(self.errors)} errors."
+class FormatErrorsFormatter(logging.Formatter):
 
-        stats = [f"{key}: {item}" for key, item in self.stats.items()]
-        stats_table = (
-            "\n\n"
-            + "Question Statistics\n"
-            + "-------------------\n"
-            + "\n".join(stats)
-        )
-        ret += stats_table
-        return ret
+    grey = "\x1b[38;20m"
+    yellow = "\x1b[33;20m"
+    red = "\x1b[31;20m"
+    bold_red = "\x1b[31;1m"
+    reset = "\x1b[0m"
+    format = "Row: %(row)-8s %(message)s"
+
+    FORMATS = {
+        logging.DEBUG: grey + format + reset,
+        logging.INFO: grey + format + reset,
+        logging.WARNING: yellow + format + reset,
+        logging.ERROR: red + format + reset,
+        logging.CRITICAL: bold_red + format + reset,
+    }
+
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)

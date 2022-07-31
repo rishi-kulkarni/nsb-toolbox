@@ -1,12 +1,10 @@
 import argparse
 from pathlib import Path
 
-from docx import Document
 
 from .assign import EditedQuestions
 from .classes import Subject
-from .importers import validate_path
-from .tables import format_table, initialize_table
+from .tables import RawQuestions
 from .yamlparsers import ParsedQuestionSpec
 
 
@@ -14,27 +12,24 @@ def make(args):
     path = Path(args.path).with_suffix(".docx")
     if args.subj is not None:
         args.subj = Subject.from_string(args.subj).value
-    initialize_table(
-        nrows=args.rows, name=args.name, subj=args.subj, set=args.set, path=path
+    questions = RawQuestions.make(
+        nrows=args.rows, name=args.name, subj=args.subj, set=args.set
     )
+    questions.save(path)
 
 
 def format(args):
 
-    cols_to_format = ("TUB", "Subj", "Ques", "LOD", "Set", "Author", "Subcat")
-
-    path_to_data = validate_path(args.path)
-    doc = Document(path_to_data)
-
-    format_table(doc, cols_to_format, force_capitalize=args.capitalize)
-    doc.save(path_to_data)
+    questions = RawQuestions.from_docx_path(args.path)
+    questions.format(force_capitalize=args.capitalize)
+    questions.save(args.path)
 
 
 def assign(args):
-    questions = EditedQuestions.from_docx_path(args.path, dry_run=args.dry_run)
+    questions = EditedQuestions.from_docx_path(args.path)
     spec = ParsedQuestionSpec.from_yaml_path(args.config)
 
-    questions.assign(spec)
+    questions.assign(spec, dry_run=args.dry_run)
     questions.save(args.path)
 
 

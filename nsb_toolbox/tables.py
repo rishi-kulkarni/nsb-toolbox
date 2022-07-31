@@ -1,18 +1,28 @@
+import logging
 import re
 from copy import deepcopy
 from enum import Enum
-from functools import partial
-from typing import Dict, Iterable, Optional, Tuple, Union
+from functools import cached_property, partial
+from typing import Dict, Iterable, Optional, Union
+from typing_extensions import Self
 
-import docx.document
 from docx import Document
 from docx.enum.text import WD_COLOR_INDEX
 from docx.shared import Inches, Pt
 from docx.table import _Cell
 from docx.text.paragraph import Paragraph
 from docx.text.run import Run
+import numpy as np
 
-from .classes import ErrorLogger, QuestionType, Subject, TossUpBonus
+from ._base_questions import BaseScienceBowlQuestions
+
+from .classes import (
+    QuestionType,
+    Subject,
+    TossUpBonus,
+    RowContextFilter,
+    FormatErrorsFormatter,
+)
 from .docx_utils import (
     capitalize_paragraph,
     clear_cell,
@@ -22,10 +32,22 @@ from .docx_utils import (
     highlight_paragraph_text,
     move_runs_to_end_of_para,
     preprocess_cell,
-    shade_columns,
+    shade_cell,
     split_run_at,
 )
 
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+row_filter = RowContextFilter()
+logger.addFilter(row_filter)
+
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+msg_formatter = FormatErrorsFormatter()
+ch.setFormatter(msg_formatter)
+
+logger.addHandler(ch)
 
 COL_WIDTHS = (
     0.72,
@@ -59,6 +81,22 @@ COL_MAPPING = {
     "Subcat": 12,
 }
 
+COL_COLORS = {
+    "TUB": None,
+    "Subj": None,
+    "Ques": None,
+    "LOD": "#FFCC99",
+    "LOD-A": None,
+    "Set": "#e5dfec",
+    "Rd": "#daeef3",
+    "Q Letter": "#daeef3",
+    "Author": None,
+    "ID": None,
+    "Source": None,
+    "Comments": None,
+    "Subcat": None,
+}
+
 TUB_RE = re.compile(r"\s*(TOSS-UP|BONUS|VISUAL BONUS|TU|B|VB)\b", re.IGNORECASE)
 SUBJECT_RE = re.compile(
     r"\s*(BIOLOGY|B|CHEMISTRY|C|EARTH AND SPACE|ES|ENERGY|EN|MATH|M|PHYSICS|P)\b",
@@ -72,19 +110,172 @@ ANSWER_RE = re.compile(r"\s*(ANSWER:)\s*", re.IGNORECASE)
 CHOICES = ("W)", "X)", "Y)", "Z)")
 
 
-class QuestionFormatterState(Enum):
-    Q_START = 0
-    STEM_END = 1
-    CHOICES = 2
-    ANSWER = 3
-    DONE = 4
+class RawQuestions(BaseScienceBowlQuestions):
+    @classmethod
+    def make(
+        cls,
+        nrows: int = 0,
+        name: Optional[str] = None,
+        subj: Optional[str] = None,
+        set: Optional[str] = None,
+    ) -> Self:
+        """Initializes a class instance file containing a newly-initialized
+        raw question table.
+
+        Parameters
+        ----------
+        nrows : int, optional
+            Number of extra rows to append to the table, by default 0
+
+        name : str, optional
+            Name of author. If not none, fills the author column of the table.
+
+        subj: str, optional
+            Subject. If not none, fills the subject column of the table.
+
+        set: str, optional
+            Set. If not none, fills the set column of the table.
+
+        Returns
+        -------
+        Self
+        """
+        document = Document()
+        font = document.styles["Normal"].font
+        font.name = "Times New Roman"
+        font.size = Pt(11)
+
+        table = document.add_table(rows=1 + nrows, cols=13)
+
+        table.style = "Table Grid"
+        table.autofit = False
+        table.allow_autofit = False
+
+        _cells = table._cells
+        _col_count = table._column_count
+
+        col_iter = partial(
+            column_indexer,
+            total_cells=len(_cells),
+            col_count=_col_count,
+            skip_header=False,
+        )
+
+        for col_name, col_idx in COL_MAPPING.items():
+
+            for cell_idx in col_iter(col_idx):
+
+                cell = _cells[cell_idx]
+                cell.width = Inches(COL_WIDTHS[col_idx])
+                if COL_COLORS[col_name]:
+                    shade_cell(cell, COL_COLORS[col_name])
+
+                if cell_idx < _col_count:
+                    cell.paragraphs[0].add_run(col_name)
+
+                if col_name == "Subj" and subj is not None:
+                    cell.paragraphs[0].text = subj
+
+                elif col_name == "Set":
+                    if set is not None:
+                        cell.paragraphs[0].text = set
+
+                elif col_name == "Author" and name is not None:
+                    cell.paragraphs[0].text = name
+
+        # ques header is italicized
+        ques_run = table.cell(0, COL_MAPPING["Ques"]).paragraphs[0].runs[0]
+        ques_run.italic = True
+
+        return cls(document)
+
+    def format(self, force_capitalize: Optional[bool] = False):
+        """Formats a Word document containing a Science Bowl question table.
+
+        Specifically, this function makes sure the columns fit the following
+        criteria:
+
+        TUB: Contains only TOSS-UP or BONUS
+        Subj: Contains only one of the valid subject areas
+        Ques: Contains a properly-formatted Short Answer or Multiple Choice question
+        LOD: Contains only an integer or is blank.
+        Set: Contains no extra whitespace
+        Author: Contains no extra whitespace
+        Subcat: Contains no extra whitespace
+
+        Parameters
+        ----------
+        force_capitalize : bool, default True
+            If True, all answer lines will be capitalized
+        """
+
+        cols_to_format = ("TUB", "Subj", "Ques", "LOD", "Set", "Author", "Subcat")
+
+        FORMATTERS = {
+            "TUB": TuBCellFormatter(),
+            "Subj": SubjectCellFormatter(),
+            "Ques": QuestionCellFormatter(force_capitalize=force_capitalize),
+            "LOD": DifficultyFormatter(),
+        }
+
+        _cells = self.document.tables[0]._cells
+        _col_count = self.document.tables[0]._column_count
+
+        col_iter = partial(
+            column_indexer,
+            total_cells=len(_cells),
+            col_count=_col_count,
+            skip_header=True,
+        )
+
+        for col_name in cols_to_format:
+            formatter = FORMATTERS.get(col_name, CellFormatter())
+            formatter.preprocess_format_column(
+                _cells[i] for i in col_iter(COL_MAPPING[col_name])
+            )
+        if row_filter._num_records == 0:
+            print("Found no errors 😄")
+        self.print_stats()
+
+    def print_stats(self):
+        print("\nStatistics")
+        print(f"{'-':->34}")
+        print(f"{'Set':<9}{'LOD':^}{'TUB':>10}{'Have':>11}")
+        print(f"{'-':->34}")
+
+        for key in sorted(self.stats.keys()):
+            have = self.stats.get(key, 0)
+            print(f"{key}{have:>10}")
+
+    @cached_property
+    def tubs(self) -> np.ndarray:
+        """Overridden because TUB might be malformed."""
+        return np.array(
+            [
+                TossUpBonus(self._cells[i].text).value
+                if self._cells[i].text in ("TOSS-UP", "BONUS", "VISUAL BONUS")
+                else "ERROR"
+                for i in column_indexer(0, len(self._cells), self._col_count)
+            ],
+            dtype="<U20",
+        )
+
+    @cached_property
+    def difficulties(self) -> np.ndarray:
+        """Overridden because difficulties may be written in LOD-A column."""
+        return np.array(
+            [
+                int(self._cells[lod].text or self._cells[lod_a].text or -1)
+                for lod, lod_a in zip(
+                    column_indexer(3, len(self._cells), self._col_count),
+                    column_indexer(4, len(self._cells), self._col_count),
+                )
+            ]
+        )
 
 
 class CellFormatter:
     """Base class that ensures formatters are standardized."""
-
-    def __init__(self, error_logger: Optional[ErrorLogger] = None):
-        self.error_logger = error_logger
 
     def format(self, cell: _Cell) -> _Cell:
         """All CellFormatters have a format function."""
@@ -99,165 +290,20 @@ class CellFormatter:
     def preprocess_format_column(self, cells: Iterable[_Cell]) -> _Cell:
         """Convenience function to preprocess and format an entire column."""
         for idx, cell in enumerate(cells):
-            if self.error_logger is not None:
-                self.error_logger.set_row(idx + 1)
+            row_filter.curr_row = idx + 1
             self.preprocess_format(cell)
-
-    def log_error(self, msg: str, cell: _Cell, level: int = 0):
-        if level == 1:
-            highlight_cell_text(cell, WD_COLOR_INDEX.YELLOW)
-        elif level == 2:
-            highlight_cell_text(cell, WD_COLOR_INDEX.RED)
-        if self.error_logger is not None:
-            self.error_logger.log_error(msg)
-
-
-def format_table(
-    table_doc: docx.document.Document,
-    cols_to_format: Tuple[str],
-    force_capitalize: bool = False,
-    verbosity: bool = True,
-) -> None:
-    """Formats a Word document containing a Science Bowl question table.
-
-    Specifically, this function makes sure the columns fit the following
-    criteria:
-
-    TUB: Contains only TOSS-UP or BONUS
-    Subj: Contains only one of the valid subject areas
-    Ques: Contains a properly-formatted Short Answer or Multiple Choice question
-    LOD: Contains only an integer or is blank.
-    Set: Contains no extra whitespace
-    Author: Contains no extra whitespace
-    Subcat: Contains no extra whitespace
-
-    Parameters
-    ----------
-    table_doc : Document
-    verbosity : bool, default True
-    """
-
-    error_logger = ErrorLogger(verbosity)
-
-    FORMATTERS = {
-        "TUB": TuBCellFormatter(error_logger),
-        "Subj": SubjectCellFormatter(error_logger),
-        "Ques": QuestionCellFormatter(
-            force_capitalize=force_capitalize, error_logger=error_logger
-        ),
-        "LOD": DifficultyFormatter(error_logger),
-    }
-
-    _cells = table_doc.tables[0]._cells
-    _col_count = table_doc.tables[0]._column_count
-
-    col_iter = partial(
-        column_indexer, total_cells=len(_cells), col_count=_col_count, skip_header=True
-    )
-
-    for col_name in cols_to_format:
-        formatter = FORMATTERS.get(col_name, CellFormatter(error_logger))
-        formatter.preprocess_format_column(
-            _cells[i] for i in col_iter(COL_MAPPING[col_name])
-        )
-
-    if len(error_logger.errors) == 0:
-        print("Found no errors 😄")
-    print(error_logger)
-
-
-def make_jans_shadings(table):
-    """Shades the 4, 6, 7, and 8th cells in a row the appropriate colors.
-
-    Parameters
-    ----------
-    row : Document.rows object
-    """
-    shade_columns(table.columns[3], "#FFCC99")
-    shade_columns(table.columns[5], "#e5dfec")
-    shade_columns(table.columns[6], "#daeef3")
-    shade_columns(table.columns[7], "#daeef3")
-
-
-def initialize_table(
-    nrows=0,
-    name: Optional[str] = None,
-    subj: Optional[str] = None,
-    set: Optional[str] = None,
-    path: Optional[str] = None,
-) -> Document:
-    """Initializes a docx file containing the Science Bowl header row.
-
-    Parameters
-    ----------
-    nrows : int, optional
-        Number of extra rows to append to the table, by default 0
-
-    name : str, optional
-        Name of author. If not none, fills the author column of the table.
-
-    subj: str, optional
-        Subject. If not none, fills the subject column of the table.
-
-    set: str, optional
-        Set. If not none, fills the set column of the table.
-
-    path : Optional[str], optional
-        Path that the docx file should be saved to.
-        If None, merely returns the document, by default None
-
-    Returns
-    -------
-    Document
-    """
-    document = Document()
-    font = document.styles["Normal"].font
-    font.name = "Times New Roman"
-    font.size = Pt(11)
-
-    table = document.add_table(rows=1 + nrows, cols=13)
-
-    table.style = "Table Grid"
-    table.autofit = False
-    table.allow_autofit = False
-
-    _cells = table._cells
-    _col_count = table._column_count
-
-    col_iter = partial(
-        column_indexer, total_cells=len(_cells), col_count=_col_count, skip_header=True
-    )
-
-    for col_name, col_idx in COL_MAPPING.items():
-        # add header
-        table.cell(0, col_idx).paragraphs[0].add_run(col_name)
-        table.cell(0, col_idx).width = Inches(COL_WIDTHS[col_idx])
-
-        for cell_idx in col_iter(col_idx):
-            cell = _cells[cell_idx]
-            cell.width = Inches(COL_WIDTHS[col_idx])
-
-            if col_name == "Subj" and subj is not None:
-                cell.paragraphs[0].text = subj
-            elif col_name == "Set" and set is not None:
-                cell.paragraphs[0].text = set
-            elif col_name == "Author" and name is not None:
-                cell.paragraphs[0].text = name
-
-    # ques header is italicized
-    ques_run = table.cell(0, COL_MAPPING["Ques"]).paragraphs[0].runs[0]
-    ques_run.italic = True
-
-    make_jans_shadings(table)
-
-    if path is not None:
-        document.save(path)
-
-    return document
 
 
 class QuestionParserException(Exception):
     pass
+
+
+class QuestionFormatterState(Enum):
+    Q_START = 0
+    STEM_END = 1
+    CHOICES = 2
+    ANSWER = 3
+    DONE = 4
 
 
 class QuestionCellFormatter(CellFormatter):
@@ -266,9 +312,7 @@ class QuestionCellFormatter(CellFormatter):
     def __init__(
         self,
         force_capitalize: bool = False,
-        error_logger: Optional[ErrorLogger] = None,
     ):
-        super().__init__(error_logger)
         self.force_capitalize = force_capitalize
 
     def format(self, cell: _Cell) -> _Cell:
@@ -303,7 +347,8 @@ class QuestionCellFormatter(CellFormatter):
                         q_type_run := para.runs[0], pattern=Q_TYPE_RE
                     )
                 except QuestionParserException as ex:
-                    self.log_error(str(ex), cell, level=2)
+                    highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+                    logger.error(str(ex))
                     break
 
                 q_type = _format_question_type_run(q_type_run, run_match)
@@ -312,7 +357,8 @@ class QuestionCellFormatter(CellFormatter):
                     try:
                         _combine_qtype_and_stem_paragraphs(para)
                     except QuestionParserException as ex:
-                        self.log_error(str(ex), cell, level=2)
+                        highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+                        logger.error(str(ex))
                         break
 
                 # left pad the first run of the stem
@@ -324,13 +370,13 @@ class QuestionCellFormatter(CellFormatter):
                 # handle incorrectly labeled questions and divert to the proper state
                 if CHOICES_RE.match(para.text):
                     if q_type is QuestionType.SHORT_ANSWER:
-                        self.log_error("Question type is SA, but has choices.", cell)
+                        logger.warning("Question type is SA, but has choices.")
                         q_type = _toggle_q_type_and_warn(q_type, q_type_run)
                     state = QuestionFormatterState.CHOICES
 
                 elif ANSWER_RE.match(para.text):
                     if q_type is QuestionType.MULTIPLE_CHOICE:
-                        self.log_error("Question type is MC, but has no choices.", cell)
+                        logger.warning("Question type is MC, but has no choices.")
                         q_type = _toggle_q_type_and_warn(q_type, q_type_run)
                     state = QuestionFormatterState.ANSWER
 
@@ -343,7 +389,8 @@ class QuestionCellFormatter(CellFormatter):
                         (choice_run := para.runs[0]), pattern=CHOICES_RE
                     )
                 except QuestionParserException as ex:
-                    self.log_error(str(ex), cell, level=2)
+                    highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+                    logger.error(str(ex))
                     break
 
                 _format_choice(run_match, choice_run, current_choice)
@@ -367,31 +414,32 @@ class QuestionCellFormatter(CellFormatter):
                     try:
                         test_choice_match = _validate_element_text(para, TEST_CHOICE_RE)
                     except QuestionParserException as ex:
-                        self.log_error(str(ex), cell, level=2)
+                        highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+                        logger.error(str(ex))
                         break
 
                     try:
                         _format_answer_line(para, test_choice_match, choices_para)
                     except QuestionParserException as ex:
-                        self.log_error(str(ex), cell)
+                        logger.error(str(ex))
 
                 state = QuestionFormatterState.DONE
 
         if state is not QuestionFormatterState.DONE:
-            self.log_error(f"Parsing failed while looking for {state}", cell, level=2)
-
-        else:
-            if self.error_logger is not None:
-                self.error_logger.stats[q_type.value] += 1
+            highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+            logger.error(f"Parsing failed while looking for {state}")
 
         return cell
 
 
 class TuBCellFormatter(CellFormatter):
     def format(self, cell: _Cell) -> _Cell:
-        tub_match = TUB_RE.match(cell.text)
 
-        if tub_match:
+        if not (tub_match := TUB_RE.match(cell.text)):
+            highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+            logger.error("Question must be a toss-up, bonus, or visual bonus.")
+
+        else:
             put = TossUpBonus.from_string(tub_match.group(1)).value
             clear_cell(cell)
             tub_run = cell.paragraphs[0].runs[0]
@@ -399,15 +447,6 @@ class TuBCellFormatter(CellFormatter):
             tub_run.italic = None
             tub_run.bold = None
             highlight_cell_text(cell, None)
-
-            if self.error_logger is not None:
-                self.error_logger.stats[put] += 1
-
-        # if a match can't be found, highlight the cell red
-        else:
-            self.log_error(
-                "Question must be a toss-up, bonus, or visual bonus.", cell, level=2
-            )
 
         return cell
 
@@ -427,7 +466,8 @@ class SubjectCellFormatter(CellFormatter):
             highlight_cell_text(cell, None)
         # if a match can't be found, highlight the cell red
         else:
-            self.log_error("Invalid subject.", cell, level=2)
+            highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+            logger.error("Invalid subject.")
 
         return cell
 
@@ -439,7 +479,8 @@ class DifficultyFormatter(CellFormatter):
             try:
                 int(cell.text)
             except ValueError:
-                self.log_error("LOD should be blank or an integer.", cell, level=2)
+                highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+                logger.error("LOD should be blank or an integer.")
 
         return cell
 
