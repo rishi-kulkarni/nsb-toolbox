@@ -1,0 +1,27 @@
+Rounds:
+  - Header: High School Round {number}
+    TUB Header: True
+    Set: HSR
+    Prefix: RR
+    Number:
+      start: 1
+      stop: 2
+    Subjects: [C: 4, EN: 3, ES: 4, P: 4, M: 4, B: 4]
+
+  - Header: High School Round {number}{set}
+    TUB Header: True
+    Set: [HSR-A, HSR-B]
+    Prefix: [RR, DE]
+    Number:
+      start: 3
+      stop: 17
+    Subjects: [C: 4, EN: 3, ES: 4, P: 4, M: 4, B: 4]
+
+  - Header: Tiebreakers Round {number}
+    TUB Header: False
+    Set: HSR
+    Prefix: TB
+    Number:
+      start: 1
+      stop: 10
+    Subjects: [C: 1, ES: 1, P: 1, M: 1, B: 1]
