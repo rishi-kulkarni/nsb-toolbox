@@ -178,7 +178,7 @@ class TestEditedQuestionsAssign:
         question_spec = ParsedQuestionSpec.from_yaml_dict(config_dict)
 
         with pytest.raises(
-            ValueError, match="Failed to assign the following questions:"
+            ValueError, match="Failed to assign. Do you have enough questions?"
         ):
             questions.assign(question_spec)
 
