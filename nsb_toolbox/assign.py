@@ -122,13 +122,39 @@ class EditedQuestions(BaseScienceBowlQuestions):
             assignment_costs == assignment_costs.max()
         ).ravel()
         failed_assignments = [
-            str(question_spec.question_list[idx]) for idx in where_bad_assigns
+            question_spec.question_list[idx] for idx in where_bad_assigns
         ]
 
-        _NL = "\n"
+        failed_sets = (question.set for question in failed_assignments)
+        failed_diff = (question.difficulty for question in failed_assignments)
+        failed_tubs = (question.tub for question in failed_assignments)
+        failed_qtypes = (question.qtype for question in failed_assignments)
+
+        raw_values = np.array(
+            [
+                f"{set_:<10}{difficulty:^5}{tub.value:^5}{qtype.value:>20}"
+                if qtype is not None
+                else f"{set_:<10}{difficulty:^5}{tub.value:^5}{'Any':>20}"
+                for set_, difficulty, tub, qtype in zip(
+                    failed_sets, failed_diff, failed_tubs, failed_qtypes
+                )
+            ]
+        )
+
+        failed_stats = {
+            val: count for val, count in zip(*np.unique(raw_values, return_counts=True))
+        }
+
+        failed_table = "\n".join(
+            f"{key}{failed_stats.get(key, 0):>10}" for key in failed_stats.keys()
+        )
         raise ValueError(
-            "Failed to assign the following "
-            f"questions:\n{_NL.join(failed_assignments)}"
+            "Failed to assign. Do you have enough questions?\n"
+            "Missing questions:\n"
+            f"{'-':->60}\n"
+            f"{'Set':<10}{'LOD':^4}{'TUB':^6}{'QType':^26}{'Need':>9}\n"
+            f"{'-':->60}\n"
+            f"{failed_table}"
         )
 
     def _report_stats(self, question_spec: ParsedQuestionSpec):
