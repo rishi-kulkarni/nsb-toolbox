@@ -194,6 +194,11 @@ class EditedQuestions(BaseScienceBowlQuestions):
 
             if user_input.lower() == "n":
                 raise ValueError("Aborted!")
+            else:
+                for round_ in self.rounds:
+                    round_.text = ""
+                for qletter in self.qletters:
+                    qletter.text = ""
 
 
 def build_cost_matrix(
