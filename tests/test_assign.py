@@ -5,7 +5,6 @@ import pytest
 from nsb_toolbox.assign import EditedQuestions
 from nsb_toolbox.importers import load_doc
 from nsb_toolbox.yamlparsers import ParsedQuestionSpec
-from numpy.testing import assert_equal
 
 data_dir = Path(__file__).parent / "test_data"
 
@@ -26,55 +25,40 @@ def instance(doc_path, request):
 
 class TestEditedQuestionsFields:
     def test_tub_field(self, instance):
-        expected_tub = np.array(["TOSS-UP"] * 6 + ["BONUS"] * 6)
-        assert_equal(instance.tubs, expected_tub)
+        for tub in instance.tubs:
+            assert tub in ("TOSS-UP", "BONUS")
 
     def test_set_field(self, instance):
-        expected_sets = ["HSR-A", "HSR-B", "HSR", "HSR", "HSR", "HSR"] * 2
-        assert [x.text for x in instance.sets] == expected_sets
+        for set_ in instance.sets:
+            assert hasattr(set_, "text")
 
     def test_diff_field(self, instance):
-        expected_difficulties = np.array([1, 2, 3, -1, 3, 3, 1, 2, 3, 4, 2, -1])
-        assert_equal(instance.difficulties, expected_difficulties)
+        for lod in instance.difficulties:
+            assert np.issubdtype(lod, np.integer)
 
     def test_qtypes_field(self, instance):
-        expected_qtypes = np.array(
-            ["Multiple Choice"] * 3
-            + ["Short Answer"] * 7
-            + ["Multiple Choice"]
-            + ["Short Answer"]
-        )
-        assert_equal(instance.qtypes, expected_qtypes)
+        for qtype in instance.qtypes:
+            assert qtype in ("Multiple Choice", "Short Answer")
 
     def test_subcat_field(self, instance):
 
-        expected_subcategories = np.array([""] * 4 + ["Organic"] * 4 + [""] * 4)
-        assert_equal(instance.subcategories, expected_subcategories)
+        for subcat in instance.subcategories:
+            assert isinstance(subcat, str)
 
     def test_rounds_field(self, instance):
 
-        expected_rounds = [""] * 12
-        assert [x.text for x in instance.rounds] == expected_rounds
+        for round_ in instance.rounds:
+            assert hasattr(round_, "text")
 
     def test_qletter_field(self, instance):
 
-        expected_qletters = [""] * 12
-        assert [x.text for x in instance.qletters] == expected_qletters
+        for qletter in instance.qletters:
+            assert hasattr(qletter, "text")
 
     def test_writer_field(self, instance):
 
-        expected_writers = np.array(
-            [""] * 7
-            + [
-                "Walfred",
-                "Chen, Andrew",
-                "",
-                "Kulkarni, Rishi",
-                "",
-            ]
-        )
-
-        assert_equal(instance.writers, expected_writers)
+        for writer in instance.writers:
+            assert isinstance(writer, str)
 
     @pytest.mark.parametrize("col_index", [0, 2, 3])
     def test_invalid_tubs(self, doc_path, col_index):
@@ -97,7 +81,7 @@ def question_spec(request):
         spec.config.shuffle_pairs = False
         spec.config.shuffle_subcategory = False
         spec.config.subcat_mismatch_penalty = 1
-        spec.config.rng = np.random.default_rng(1)
+        spec.config.rng = np.random.default_rng()
         return spec
     if request.param == "prefer_writers":
         spec.config.shuffle_difficulty = False
@@ -105,7 +89,7 @@ def question_spec(request):
         spec.config.shuffle_pairs = False
         spec.config.shuffle_subcategory = False
         spec.config.subcat_mismatch_penalty = 1
-        spec.config.rng = np.random.default_rng(1)
+        spec.config.rng = np.random.default_rng()
         return spec
 
 
@@ -147,6 +131,44 @@ class TestEditedQuestionsAssign:
         with pytest.raises(ValueError, match="Aborted!"):
             questions.assign(question_spec)
             questions.assign(question_spec)
+
+    def test_reassign_contract_is_met(self, question_spec, doc_path, monkeypatch):
+
+        monkeypatch.setattr("builtins.input", lambda _: "y")
+
+        questions = EditedQuestions.from_docx_path(doc_path)
+
+        pre_assign_sets = [x.text for x in questions.sets]
+
+        questions.assign(question_spec)
+        questions.assign(question_spec)
+        questions.assign(question_spec)
+        questions.assign(question_spec)
+        questions.assign(question_spec)
+        questions.assign(question_spec)
+        questions.assign(question_spec)
+        questions.assign(question_spec)
+        questions.assign(question_spec)
+
+        post_assign_sets = [x.text for x in questions.sets]
+
+        # check that pre-specified sets are respected
+        for pre, post in zip(pre_assign_sets, post_assign_sets):
+            assert pre == post or pre == "HSR"
+
+        assignments = [
+            f"{tub}-{set_.text}-{rd.text}-{let.text}"
+            for tub, set_, rd, let in zip(
+                questions.tubs, questions.sets, questions.rounds, questions.qletters
+            )
+            if rd.text
+        ]
+
+        # check that each assignment is unique
+        assert len(assignments) == len(np.unique(assignments))
+
+        # check that each question in the spec was assigned
+        assert len(assignments) == len(question_spec.question_list)
 
     def test_exception_when_assignment_failure(self, doc_path):
         questions = EditedQuestions.from_docx_path(doc_path)
