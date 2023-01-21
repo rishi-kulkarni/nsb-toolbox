@@ -43,7 +43,7 @@ class TestInitialize:
         )
 
     def test_font_size(self, initialized_doc_with_table):
-        assert initialized_doc_with_table.styles["Normal"].font.size == Pt(11)
+        assert initialized_doc_with_table.styles["Normal"].font.size == Pt(12)
 
     def test_number_of_tables_in_doc(self, initialized_doc_with_table):
         assert len(initialized_doc_with_table.tables) == 1
