@@ -143,7 +143,7 @@ class RawQuestions(BaseScienceBowlQuestions):
         document = Document()
         font = document.styles["Normal"].font
         font.name = "Times New Roman"
-        font.size = Pt(11)
+        font.size = Pt(12)
 
         table = document.add_table(rows=1 + nrows, cols=13)
 
