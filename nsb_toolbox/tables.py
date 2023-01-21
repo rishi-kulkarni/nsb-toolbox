@@ -221,6 +221,10 @@ class RawQuestions(BaseScienceBowlQuestions):
         _cells = self.document.tables[0]._cells
         _col_count = self.document.tables[0]._column_count
 
+        font = self.document.styles["Normal"].font
+        font.name = "Times New Roman"
+        font.size = Pt(12)
+
         col_iter = partial(
             column_indexer,
             total_cells=len(_cells),
