@@ -2,7 +2,7 @@
 
 ## A command-line utility for formatting Science Bowl questions
 
-Version 0.5.1 - Updated for 2024 NSB
+Version 0.5.2 - Updated for 2024 NSB
 
 The NSB Toolbox contains a set of tools to make it easier to write and edit Science Bowl questions. It ensures that questions are compliant with the official Science Bowl format, allowing writers to focus on just writing the questions. It also highlights common formatting errors for editors, allowing them to focus on checking content without worrying that they're missing formatting issues here and there.
 
