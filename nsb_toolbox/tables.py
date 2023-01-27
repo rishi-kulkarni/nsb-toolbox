@@ -173,7 +173,7 @@ class RawQuestions(BaseScienceBowlQuestions):
                 if cell_idx < _col_count:
                     cell.paragraphs[0].add_run(col_name)
 
-                if col_name == "Subj" and subj is not None:
+                elif col_name == "Subj" and subj is not None:
                     cell.paragraphs[0].text = subj
 
                 elif col_name == "Set":
