@@ -141,9 +141,6 @@ class RawQuestions(BaseScienceBowlQuestions):
         Self
         """
         document = Document()
-        font = document.styles["Normal"].font
-        font.name = "Times New Roman"
-        font.size = Pt(12)
 
         table = document.add_table(rows=1 + nrows, cols=13)
 
@@ -167,8 +164,6 @@ class RawQuestions(BaseScienceBowlQuestions):
 
                 cell = _cells[cell_idx]
                 cell.width = Inches(COL_WIDTHS[col_idx])
-                if COL_COLORS[col_name]:
-                    shade_cell(cell, COL_COLORS[col_name])
 
                 if cell_idx < _col_count:
                     cell.paragraphs[0].add_run(col_name)
@@ -189,7 +184,7 @@ class RawQuestions(BaseScienceBowlQuestions):
 
         return cls(document)
 
-    def format(self, force_capitalize: Optional[bool] = False):
+    def format(self, force_capitalize: Optional[bool] = False, verbose: bool = True):
         """Formats a Word document containing a Science Bowl question table.
 
         Specifically, this function makes sure the columns fit the following
@@ -209,13 +204,26 @@ class RawQuestions(BaseScienceBowlQuestions):
             If True, all answer lines will be capitalized
         """
 
-        cols_to_format = ("TUB", "Subj", "Ques", "LOD", "Set", "Author", "Subcat")
+        cols_to_format = (
+            "TUB",
+            "Subj",
+            "Ques",
+            "LOD",
+            "Set",
+            "Rd",
+            "Q Letter",
+            "Author",
+            "Subcat",
+        )
 
         FORMATTERS = {
             "TUB": TuBCellFormatter(),
             "Subj": SubjectCellFormatter(),
             "Ques": QuestionCellFormatter(force_capitalize=force_capitalize),
             "LOD": DifficultyFormatter(),
+            "Set": SetFormatter(),
+            "Rd": RdFormatter(),
+            "Q Letter": QLetterFormatter(),
         }
 
         _cells = self.document.tables[0]._cells
@@ -237,9 +245,12 @@ class RawQuestions(BaseScienceBowlQuestions):
             formatter.preprocess_format_column(
                 _cells[i] for i in col_iter(COL_MAPPING[col_name])
             )
-        if row_filter._num_records == 0:
-            print("Found no errors 😄")
-        self.print_stats()
+        if verbose:
+            if row_filter._num_records == 0:
+                print("Found no errors 😄")
+            self.print_stats()
+
+        return self
 
     def print_stats(self):
         print("\nStatistics")
@@ -288,6 +299,8 @@ class CellFormatter:
     def preprocess_format(self, cell: _Cell) -> _Cell:
         """Convenience function to preprocess and format a cell."""
         cell = preprocess_cell(cell)
+        if hasattr(self, "color"):
+            shade_cell(cell, self.color)
         if cell.text.strip() != "":
             return self.format(cell)
 
@@ -477,6 +490,10 @@ class SubjectCellFormatter(CellFormatter):
 
 
 class DifficultyFormatter(CellFormatter):
+    """Formats the difficulty cell and shades it with the appropriate color."""
+
+    color = COL_COLORS["LOD"]
+
     def format(self, cell: _Cell) -> _Cell:
 
         if cell.text:
@@ -487,6 +504,24 @@ class DifficultyFormatter(CellFormatter):
                 logger.error("LOD should be blank or an integer.")
 
         return cell
+
+
+class SetFormatter(CellFormatter):
+    """Formats the set cell and shades it with the appropriate color."""
+
+    color = COL_COLORS["Set"]
+
+
+class RdFormatter(CellFormatter):
+    """Formats the round cell and shades it with the appropriate color."""
+
+    color = COL_COLORS["Rd"]
+
+
+class QLetterFormatter(CellFormatter):
+    """Formats the question letter cell and shades it with the appropriate color."""
+
+    color = COL_COLORS["Q Letter"]
 
 
 def _format_question_type_run(q_type_run: Run, run_match: re.Match) -> QuestionType:

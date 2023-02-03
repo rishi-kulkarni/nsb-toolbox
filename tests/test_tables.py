@@ -37,14 +37,6 @@ def table_cells(initialized_doc_with_table):
 
 
 class TestInitialize:
-    def test_font_name(self, initialized_doc_with_table):
-        assert (
-            initialized_doc_with_table.styles["Normal"].font.name == "Times New Roman"
-        )
-
-    def test_font_size(self, initialized_doc_with_table):
-        assert initialized_doc_with_table.styles["Normal"].font.size == Pt(12)
-
     def test_number_of_tables_in_doc(self, initialized_doc_with_table):
         assert len(initialized_doc_with_table.tables) == 1
 
@@ -503,6 +495,12 @@ def format_test_table():
     },
 )
 class TestFormat:
+    def test_font_name(self, format_test_table, cell_idx):
+        assert format_test_table.part.styles["Normal"].font.name == "Times New Roman"
+
+    def test_font_size(self, format_test_table, cell_idx):
+        assert format_test_table.part.styles["Normal"].font.size == Pt(12)
+
     def test_tub_col(self, format_test_table, cell_idx):
         expected = ["TUB", "TOSS-UP", "BONUS", "TOSS-UP", "BONUS", "TOSS-UP"]
         expected_text = expected[cell_idx]
