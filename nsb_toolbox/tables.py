@@ -262,6 +262,11 @@ class RawQuestions(BaseScienceBowlQuestions):
             have = self.stats.get(key, 0)
             print(f"{key}{have:>10}")
 
+        print(f"{'-':->34}")
+        for key in sorted(self.qtype_stats.keys()):
+            have = self.qtype_stats.get(key, 0)
+            print(f"{key :<15}{have :>18}")
+
     @cached_property
     def tubs(self) -> np.ndarray:
         """Overridden because TUB might be malformed."""

@@ -97,11 +97,21 @@ class BaseScienceBowlQuestions:
     def qtypes(self) -> np.ndarray:
         return np.array(
             [
-                QuestionType(self._cells[i].paragraphs[0].runs[0].text).value
+                QuestionType(qtype).value
+                if (qtype := self._cells[i].paragraphs[0].runs[0].text)
+                else ""
                 for i in column_indexer(2, len(self._cells), self._col_count)
             ],
             dtype="<U20",
         )
+
+    @property
+    def qtype_stats(self) -> Dict[str, int]:
+        return {
+            val: count
+            for val, count in zip(*np.unique(self.qtypes, return_counts=True))
+            if val
+        }
 
     @cached_property
     def subcategories(self) -> np.ndarray:
