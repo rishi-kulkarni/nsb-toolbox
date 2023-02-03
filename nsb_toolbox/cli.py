@@ -12,10 +12,9 @@ def make(args):
     path = Path(args.path).with_suffix(".docx")
     if args.subj is not None:
         args.subj = Subject.from_string(args.subj).value
-    questions = RawQuestions.make(
+    RawQuestions.make(
         nrows=args.rows, name=args.name, subj=args.subj, set=args.set
-    )
-    questions.save(path)
+    ).format(verbose=False).save(path)
 
 
 def format(args):
