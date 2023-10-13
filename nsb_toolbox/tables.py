@@ -159,9 +159,7 @@ class RawQuestions(BaseScienceBowlQuestions):
         )
 
         for col_name, col_idx in COL_MAPPING.items():
-
             for cell_idx in col_iter(col_idx):
-
                 cell = _cells[cell_idx]
                 cell.width = Inches(COL_WIDTHS[col_idx])
 
@@ -184,7 +182,12 @@ class RawQuestions(BaseScienceBowlQuestions):
 
         return cls(document)
 
-    def format(self, force_capitalize: Optional[bool] = False, verbose: bool = True):
+    def format(
+        self,
+        force_capitalize: bool = False,
+        verbose: bool = True,
+        line_after_stem: bool = False,
+    ):
         """Formats a Word document containing a Science Bowl question table.
 
         Specifically, this function makes sure the columns fit the following
@@ -219,7 +222,9 @@ class RawQuestions(BaseScienceBowlQuestions):
         FORMATTERS = {
             "TUB": TuBCellFormatter(),
             "Subj": SubjectCellFormatter(),
-            "Ques": QuestionCellFormatter(force_capitalize=force_capitalize),
+            "Ques": QuestionCellFormatter(
+                force_capitalize=force_capitalize, line_after_stem=line_after_stem
+            ),
             "LOD": DifficultyFormatter(),
             "Set": SetFormatter(),
             "Rd": RdFormatter(),
@@ -334,8 +339,10 @@ class QuestionCellFormatter(CellFormatter):
     def __init__(
         self,
         force_capitalize: bool = False,
+        line_after_stem: bool = False,
     ):
         self.force_capitalize = force_capitalize
+        self.line_after_stem = line_after_stem
 
     def format(self, cell: _Cell) -> _Cell:
         """Takes a preprocessed question cell and returns a cell containing a
@@ -358,12 +365,10 @@ class QuestionCellFormatter(CellFormatter):
         choices_para = {}
 
         for para in cell.paragraphs:
-
             if state is QuestionFormatterState.DONE:
                 break
 
             elif state is QuestionFormatterState.Q_START and Q_TYPE_RE.match(para.text):
-
                 try:
                     run_match = _validate_element_text(
                         q_type_run := para.runs[0], pattern=Q_TYPE_RE
@@ -405,7 +410,6 @@ class QuestionCellFormatter(CellFormatter):
             # this is intentionally an if - stem_end should continue onto
             # choices or answer
             if state is QuestionFormatterState.CHOICES and CHOICES_RE.match(para.text):
-
                 try:
                     run_match = _validate_element_text(
                         (choice_run := para.runs[0]), pattern=CHOICES_RE
@@ -417,6 +421,11 @@ class QuestionCellFormatter(CellFormatter):
 
                 _format_choice(run_match, choice_run, current_choice)
 
+                # if current_choice was 0 and line_after_stem is true, we need to
+                # insert a blank line before the first choice
+                if current_choice == 0 and self.line_after_stem:
+                    para.insert_paragraph_before("")
+
                 # save text and update the choice we're looking for
                 choices_para[current_choice] = para
                 current_choice += 1
@@ -425,14 +434,12 @@ class QuestionCellFormatter(CellFormatter):
                     state = QuestionFormatterState.ANSWER
 
             elif state is QuestionFormatterState.ANSWER and ANSWER_RE.match(para.text):
-
                 para.insert_paragraph_before("")
 
                 if self.force_capitalize:
                     capitalize_paragraph(para)
 
                 if q_type is QuestionType.MULTIPLE_CHOICE:
-
                     try:
                         test_choice_match = _validate_element_text(para, TEST_CHOICE_RE)
                     except QuestionParserException as ex:
@@ -456,7 +463,6 @@ class QuestionCellFormatter(CellFormatter):
 
 class TuBCellFormatter(CellFormatter):
     def format(self, cell: _Cell) -> _Cell:
-
         if not (tub_match := TUB_RE.match(cell.text)):
             highlight_cell_text(cell, WD_COLOR_INDEX.RED)
             logger.error("Question must be a toss-up, bonus, or visual bonus.")
@@ -475,7 +481,6 @@ class TuBCellFormatter(CellFormatter):
 
 class SubjectCellFormatter(CellFormatter):
     def format(self, cell: _Cell) -> _Cell:
-
         subject_match = SUBJECT_RE.match(cell.text)
 
         if subject_match:
@@ -500,7 +505,6 @@ class DifficultyFormatter(CellFormatter):
     color = COL_COLORS["LOD"]
 
     def format(self, cell: _Cell) -> _Cell:
-
         if cell.text:
             try:
                 int(cell.text)

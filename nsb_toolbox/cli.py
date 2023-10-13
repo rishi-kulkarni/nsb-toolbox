@@ -18,9 +18,10 @@ def make(args):
 
 
 def format(args):
-
     questions = RawQuestions.from_docx_path(args.path)
-    questions.format(force_capitalize=args.capitalize)
+    questions.format(
+        force_capitalize=args.capitalize, line_after_stem=args.line_after_stem
+    )
     questions.save(args.path)
 
 
@@ -52,6 +53,11 @@ def main():
         "--capitalize",
         action="store_true",
         help="force all answer lines to be capitalized",
+    )
+    format_parser.add_argument(
+        "--line-after-stem",
+        action="store_true",
+        help="adds a line after the stem in multiple choice questions",
     )
     format_parser.set_defaults(func=format)
 

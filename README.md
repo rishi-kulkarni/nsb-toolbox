@@ -54,9 +54,13 @@ subcommands:
 
 ```nsb format path/to/nsb/questions.docx```
 
-It also takes a single optional argument, `--capitalize`. If given, `nsb format` will force every answer line to be capitalized. For example:
+It also takes an optional argument, `--capitalize`. If given, `nsb format` will force every answer line to be capitalized. For example:
 
 ```nsb format path/to/nsb/questions.docx --capitalize```
+
+It also provides a `--line-after-stem` optional argument to add a blank line after the stem in Multiple Choice questions (the official style prior to 2023). For example:
+
+```nsb format path/to/nsb/questions.docx --line-after-stem```
 
 <a name="auto-format"></a>
 ### Auto-Formatting
