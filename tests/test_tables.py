@@ -48,14 +48,12 @@ class TestInitialize:
         assert generated_rows == expected_rows + 1
 
     def test_cell_widths(self, table_cells):
-
         for idx, cell in enumerate(table_cells):
             row_idx, col_idx = divmod(idx, 13)
 
             assert pytest.approx(cell.width.inches, 0.001) == tables.COL_WIDTHS[col_idx]
 
     def test_cell_optional_parameters(self, table_cells, initialize_params):
-
         _, subj, set_, author = initialize_params
 
         for idx, cell in enumerate(table_cells):
@@ -131,7 +129,6 @@ def format_difficulty_rows():
 @pytest.mark.parametrize("cell_idx", [0, 1, 2, 3])
 class TestDifficultyFormatter:
     def test_expected_test(self, format_difficulty_rows, cell_idx):
-
         EXPECTED_TEXT = (
             "1",
             "2",
@@ -143,7 +140,6 @@ class TestDifficultyFormatter:
         assert formatter.format(cell).text == EXPECTED_TEXT[cell_idx]
 
     def test_difficulty_errors(self, format_difficulty_rows, cell_idx):
-
         cell = format_difficulty_rows[1].cells[cell_idx]
         formatter = tables.DifficultyFormatter()
         test_cell = formatter.format(cell)
@@ -546,3 +542,24 @@ class TestFormat:
         expected_text = expected[cell_idx]
 
         assert format_test_table.columns[3].cells[cell_idx].text == expected_text
+
+
+@pytest.fixture(scope="module")
+def format_check_capitalization_test_table():
+    doc = Document(data_dir / "table_test.docx")
+    return doc
+
+
+@pytest.mark.parametrize(
+    "capitalize",
+    [True, False],
+    ids=["Capitalized", "Not Capitalized"],
+)
+def test_format_table_test_docx(
+    format_check_capitalization_test_table, capitalize: bool
+):
+    """Checks that neither of these raise an error."""
+    doc = format_check_capitalization_test_table
+    tables.RawQuestions(doc).format(
+        force_capitalize=capitalize,
+    )

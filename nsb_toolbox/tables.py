@@ -550,7 +550,7 @@ def _format_question_type_run(q_type_run: Run, run_match: re.Match) -> QuestionT
 def _format_answer_line(
     para: Paragraph, test_choice_match: re.Match, choices: Dict[int, Paragraph]
 ):
-    choice_num = CHOICES.index(test_choice_match.group(1) + ")")
+    choice_num = CHOICES.index(test_choice_match.group(1).upper() + ")")
     # if answer line is a single letter with an optional ), copy the
     # text of the correct choice over to the answer line
     if test_choice_match.span()[1] <= test_choice_match.span(1)[1] + 1:
