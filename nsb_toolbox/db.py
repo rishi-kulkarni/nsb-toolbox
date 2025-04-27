@@ -32,7 +32,7 @@ def extract_text_from_docx(file_path: Path) -> str:
 def parse_questions(text: str, source_file: str) -> List[Question]:
     """Parse the document text into structured Question objects."""
     # Split on TOSS-UP and BONUS headers
-    pattern = r"(TOSS-UP|BONUS)\s*\n\s*(\d+)\)(.*?)(?=(?:\n\s*(?:TOSS-UP|BONUS))|$)"
+    pattern = r"(TOSS-UP|BONUS|VISUAL BONUS)\s*\n\s*(\d+)\)(.*?)(?=(?:\n\s*(?:TOSS-UP|BONUS|VISUAL BONUS))|$)"
     matches = re.finditer(pattern, text, re.DOTALL)
 
     questions = []
@@ -166,7 +166,7 @@ def setup_database(db_path: str) -> sqlite3.Connection:
         answer_text,
         content='answers',
         content_rowid='id',
-        tokenize = "porter ascii"
+        tokenize = "unicode61"
     )
     """)
 
