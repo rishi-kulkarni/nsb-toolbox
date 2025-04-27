@@ -211,7 +211,6 @@ def setup_database(db_path: str) -> sqlite3.Connection:
     )
 
     conn.commit()
-    print(f"Database setup complete at {db_path}")
     return conn
 
 
@@ -334,17 +333,12 @@ def find_equivalent_answers(
         params = (f'"{answer_text}"',)
         cursor.execute(query, params)
         initial_answer_ids = [row[0] for row in cursor.fetchall()]
-        print(f"FTS query found {len(initial_answer_ids)} initial matches.")
     else:
         cursor.execute("SELECT id FROM answers WHERE answer_text = ?", (answer_text,))
         initial_answer_ids = [row[0] for row in cursor.fetchall()]
-        print(f"Exact match query found {len(initial_answer_ids)} initial matches.")
 
     if not initial_answer_ids:
-        print("No initial matching answers found.")
         return []
-
-    print(f"Processing based on initial matching answer IDs: {initial_answer_ids}")
 
     # --- Find all groups containing these initial answers ---
     placeholders_answers = ",".join(["?"] * len(initial_answer_ids))
@@ -366,7 +360,6 @@ def find_equivalent_answers(
     all_relevant_answer_ids = set(initial_answer_ids)  # Start with initial matches
 
     if group_ids:
-        print(f"Found related group IDs: {group_ids}")
         # Find ALL answer IDs belonging to any of these groups
         placeholders_groups = ",".join(["?"] * len(group_ids))
         cursor.execute(
@@ -388,10 +381,6 @@ def find_equivalent_answers(
         # This shouldn't happen if initial_answer_ids was populated, but defensive check
         print("Error: No relevant answer IDs found after group check.")
         return []
-
-    print(
-        f"Total relevant answer IDs (initial + grouped): {list(all_relevant_answer_ids)}"
-    )
 
     # --- Fetch details for all relevant answers and their questions ---
     placeholders_all_answers = ",".join(["?"] * len(all_relevant_answer_ids))
