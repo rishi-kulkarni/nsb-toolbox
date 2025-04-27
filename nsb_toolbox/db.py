@@ -32,7 +32,7 @@ def extract_text_from_docx(file_path: Path) -> str:
 def parse_questions(text: str, source_file: str) -> List[Question]:
     """Parse the document text into structured Question objects."""
     # Split on TOSS-UP and BONUS headers
-    pattern = r"(TOSS-UP|BONUS|VISUAL BONUS)\s*\n\s*(\d+)\)(.*?)(?=(?:\n\s*(?:TOSS-UP|BONUS|VISUAL BONUS))|$)"
+    pattern = r"(TOSS-UP|BONUS|VISUAL BONUS)\s*\n\s*(\d+)\)(.*?)(?=(?:\n\s*(?:TOSS-UP|BONUS|VISUAL BONUS))|(?:\n\s*~{3,})|$)"
     matches = re.finditer(pattern, text, re.DOTALL)
 
     questions = []
