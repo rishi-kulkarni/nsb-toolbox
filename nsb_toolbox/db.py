@@ -29,35 +29,88 @@ def extract_text_from_docx(file_path: Path) -> str:
     return "\n".join(para.text for para in doc.paragraphs)
 
 
+def preprocess_text(text: str) -> str:
+    """
+    Normalize whitespace and formatting in the document text to make parsing more reliable.
+    """
+    # Replace non-breaking spaces with regular spaces
+    text = text.replace("\xa0", " ")
+
+    # Normalize different types of dashes (en dash, em dash) to a standard format
+    text = re.sub(r"[–—]", "–", text)  # Normalize to en dash
+
+    # Normalize newlines (replace multiple newlines with two newlines)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    # Remove underscores used as separators
+    text = re.sub(r"\n_+\n", "\n\n", text)
+
+    # Ensure consistent spacing around dashes in subject-type format
+    text = re.sub(r"(\w+)\s*–\s*(\w+)", r"\1 – \2", text)
+
+    # Ensure consistent formatting around ANSWER:
+    text = re.sub(r"ANSWER:\s*", "ANSWER: ", text)
+
+    return text
+
+
 def parse_questions(text: str, source_file: str) -> List[Question]:
     """Parse the document text into structured Question objects."""
+    # First preprocess the text
+    text = preprocess_text(text)
+
     # Split on TOSS-UP and BONUS headers
-    pattern = r"(TOSS-UP|BONUS|VISUAL BONUS)\s*\n\s*(\d+)\)(.*?)(?=(?:\n\s*(?:TOSS-UP|BONUS|VISUAL BONUS))|(?:\n\s*~{3,})|$)"
+    # Updated pattern that includes ANSWER section in each match and handles various formats
+    pattern = r"(TOSS-UP|BONUS|VISUAL BONUS)\s*\n\s*(\d+)\)(.*?ANSWER:.*?)(?=(?:\n\s*(?:TOSS-UP|BONUS|VISUAL BONUS))|(?:\n_+\n)|(?:\n\n)|$)"
     matches = re.finditer(pattern, text, re.DOTALL)
 
     questions = []
 
     for match in matches:
-        content = match.group(3).strip()  # Rest of the content
+        q_number = match.group(2).strip()  # Question number
+        content = match.group(3).strip()  # Rest of content including ANSWER
 
-        # Extract subject and type
-        subject_type_pattern = r"([\w\s]+)\s*–\s*((?:Multiple Choice|Short Answer))"
-        subject_type_match = re.search(subject_type_pattern, content)
+        # Try to find subject and type using different patterns
+
+        # Pattern 1: Standard format with dash separator
+        subject_type_pattern1 = (
+            r"([\w\s]+)\s*[–—|–|-]\s*((?:Multiple Choice|Short Answer))"
+        )
+
+        # Pattern 2: Format with subject in all caps and no dash
+        subject_type_pattern2 = (
+            r"([A-Z]+(?:\s+[A-Z]+)*)\s+(Multiple Choice|Short Answer)"
+        )
+
+        subject_type_match = re.search(subject_type_pattern1, content, re.IGNORECASE)
+        if not subject_type_match:
+            subject_type_match = re.search(
+                subject_type_pattern2, content, re.IGNORECASE
+            )
 
         if not subject_type_match:
+            print(
+                f"Warning: Could not parse subject and type for question {q_number} in content: {content[:50]}..."
+            )
             continue  # Skip if we can't parse subject and type
 
         subject = subject_type_match.group(1).strip()
         q_type = subject_type_match.group(2).strip()
 
         # Extract question text and answer
-        question_answer_pattern = (
-            r"(?:Multiple Choice|Short Answer).*?(.*?)ANSWER:\s*(.*?)$"
-        )
+        question_answer_pattern = r"(?:Multiple Choice|Short Answer|Multiple choice|Short answer)(.*?)ANSWER:\s*(.*?)$"
         qa_match = re.search(question_answer_pattern, content, re.DOTALL)
 
         if not qa_match:
-            continue  # Skip if we can't parse question text and answer
+            print(
+                f"Warning: Could not parse question text and answer for question {q_number} in content: {content[:50]}..."
+            )
+            # Try a more general pattern that doesn't rely on Multiple Choice/Short Answer
+            general_qa_pattern = r"(.*?)ANSWER:\s*(.*?)$"
+            qa_match = re.search(general_qa_pattern, content, re.DOTALL)
+
+            if not qa_match:
+                continue  # Skip if we can't parse even with the more general pattern
 
         q_text = qa_match.group(1).strip()
         answer_text = qa_match.group(2).strip()
@@ -86,6 +139,9 @@ def parse_questions(text: str, source_file: str) -> List[Question]:
 
 def parse_answer(answer_text: str) -> Tuple[str, List[str]]:
     """Parse the answer text to extract primary and alternate answers."""
+    # Clean up the answer text
+    answer_text = answer_text.strip()
+
     # Check for ACCEPT pattern (handles various formats)
     accept_pattern = r"\((?:ACCEPT:?|ALSO ACCEPT:?)(.*?)\)"
     accept_match = re.search(accept_pattern, answer_text, re.IGNORECASE)
@@ -104,6 +160,15 @@ def parse_answer(answer_text: str) -> Tuple[str, List[str]]:
                 alternates.append(alt.strip())
 
         return primary_text, alternates
+
+    # Check for DO NOT ACCEPT pattern
+    do_not_pattern = r"\(?do not accept:?(.*?)\)?"
+    do_not_match = re.search(do_not_pattern, answer_text, re.IGNORECASE)
+
+    if do_not_match:
+        # Return primary answer without the "do not accept" part
+        primary_text = answer_text[: do_not_match.start()].strip()
+        return primary_text, []
 
     # Handle special cases
     if re.search(r"\bALL\b", answer_text):
@@ -224,7 +289,7 @@ def process_document(file_path: Path, db_conn: sqlite3.Connection) -> int:
             text = f.read()
 
     # Parse questions
-    questions = parse_questions(text, str(file_path))
+    questions = parse_questions(preprocess_text(text), str(file_path))
 
     # Store in database
     cursor = db_conn.cursor()
