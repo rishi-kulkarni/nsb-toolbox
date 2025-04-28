@@ -269,6 +269,9 @@ def setup_database(db_path: str) -> sqlite3.Connection:
         "CREATE INDEX IF NOT EXISTS idx_answers_question ON answers(question_id)"
     )
     cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_answers_text_q_id ON answers(answer_text, question_id)"
+    )
+    cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_equivalents_group ON answer_equivalents(group_id)"
     )
     cursor.execute(
@@ -490,17 +493,27 @@ def find_questions_by_answer(
                 answers_dict[answer_text]["questions"].append(question_info)
 
     # Calculate total question count for each answer
-    for answer_key in answers_dict:
-        cursor.execute(
-            """
-            SELECT COUNT(DISTINCT q.id)
-            FROM answers a
-            JOIN questions q ON a.question_id = q.id
-            WHERE a.answer_text = ?
-            """,
-            (answer_key,),
-        )
-        answers_dict[answer_key]["total_question_count"] = cursor.fetchone()[0]
+    # Get all counts in a single query with GROUP BY
+    cursor.execute(
+        """
+        SELECT a.answer_text, COUNT(DISTINCT q.id) as question_count
+        FROM answers a
+        JOIN questions q ON a.question_id = q.id
+        WHERE a.answer_text IN ({})
+        GROUP BY a.answer_text
+    """.format(",".join("?" * len(answers_dict))),
+        list(answers_dict.keys()),
+    )
+
+    # Update the dictionary with counts
+    for answer_text, count in cursor.fetchall():
+        if answer_text in answers_dict:
+            answers_dict[answer_text]["total_question_count"] = count
+
+    # Set default count of 0 for any answers that weren't returned in the query
+    for answer_text in answers_dict:
+        if "total_question_count" not in answers_dict[answer_text]:
+            answers_dict[answer_text]["total_question_count"] = 0
 
     # Convert to list and sort by total question count (descending)
     results = list(answers_dict.values())
