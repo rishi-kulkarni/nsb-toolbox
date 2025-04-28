@@ -450,6 +450,10 @@ def find_questions_by_answer(
         JOIN questions q ON a.question_id = q.id
             AND q.type = 'Short Answer'
         WHERE a.id IN ({placeholders})
+        -- Exclude list-style questions
+        AND q.text NOT LIKE 'Rank%' 
+        AND q.text NOT LIKE 'Order%'
+        AND q.text NOT LIKE 'Identify%'
         ORDER BY a.answer_text, a.is_primary DESC
         """,
         list(all_relevant_answer_ids),
