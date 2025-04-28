@@ -6,9 +6,9 @@ from colorama import Fore, Style, init
 from .assign import EditedQuestions
 from .classes import Subject
 from .db import (
-    find_equivalent_answers,
-    print_results_colorized,
-    print_results_json,
+    find_questions_by_answer,
+    print_answer_groups_colorized,
+    print_answer_groups_json,
     process_document,
     setup_database,
 )
@@ -81,12 +81,12 @@ def db_ingest(args):
 def db_search(args):
     db_path = Path(args.db_path).expanduser()
     conn = setup_database(str(db_path))
-    results = find_equivalent_answers(conn, args.answer, not args.exact)
+    results = find_questions_by_answer(conn, args.answer, not args.exact)
 
     if args.json:
-        print_results_json(results)
+        print_answer_groups_json(results)
     else:
-        print_results_colorized(results)
+        print_answer_groups_colorized(results)
 
     conn.close()
 

@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import List, Dict, Tuple
 from pathlib import Path
-from colorama import init, Fore, Style
+from colorama import Fore, Style
 
 
 @dataclass(frozen=True)
@@ -310,28 +310,26 @@ def process_document(file_path: Path, db_conn: sqlite3.Connection) -> int:
     return processed_count
 
 
-def find_equivalent_answers(
+def find_questions_by_answer(
     conn: sqlite3.Connection,
     answer_text: str,
     use_fts: bool = True,
+    max_questions_per_answer: int = 5,
 ) -> List[Dict]:
     """
-    Find all questions with answers equivalent (based on grouping) to those
-    matching the given answer text, using FTS5 for searching.
-    Retrieves all answers within the found equivalence groups.
+    Find all answers matching or equivalent to the search term, then group
+    questions by each answer text, showing how many questions use each answer.
+    Returns a list of answer groups, each containing up to N sample questions.
     """
     cursor = conn.cursor()
-    initial_answer_ids = []  # Renamed for clarity
 
-    # --- Find initial matching answer IDs ---
+    # Find initial matching answer IDs (same as before)
+    initial_answer_ids = []
     if use_fts:
-        query = """
-            SELECT rowid FROM answers_fts
-            WHERE answers_fts MATCH ?
-            ORDER BY bm25(answers_fts)
-        """
-        params = (f'"{answer_text}"',)
-        cursor.execute(query, params)
+        cursor.execute(
+            "SELECT rowid FROM answers_fts WHERE answers_fts MATCH ? ORDER BY bm25(answers_fts)",
+            (f'"{answer_text}"',),
+        )
         initial_answer_ids = [row[0] for row in cursor.fetchall()]
     else:
         cursor.execute("SELECT id FROM answers WHERE answer_text = ?", (answer_text,))
@@ -340,217 +338,145 @@ def find_equivalent_answers(
     if not initial_answer_ids:
         return []
 
-    # --- Find all groups containing these initial answers ---
-    placeholders_answers = ",".join(["?"] * len(initial_answer_ids))
-    cursor.execute(
-        f"""
-        SELECT DISTINCT group_id
-        FROM answer_equivalents
-        WHERE answer_id IN ({placeholders_answers})
-        """,
-        initial_answer_ids,
-    )
-    group_ids = [row[0] for row in cursor.fetchall()]
-
-    # --- Handle case where initial answers might not be in any group ---
-    # If no groups are found, maybe we should return the questions for the initial matches directly?
-    # Or just the answers found initially? Let's refine this: Find ALL answer IDs,
-    # either from groups OR the initial list if no groups were found.
-
-    all_relevant_answer_ids = set(initial_answer_ids)  # Start with initial matches
-
-    if group_ids:
-        # Find ALL answer IDs belonging to any of these groups
-        placeholders_groups = ",".join(["?"] * len(group_ids))
+    # Find all groups containing these initial answers
+    all_relevant_answer_ids = set(initial_answer_ids)
+    if initial_answer_ids:
+        placeholders = ",".join(["?"] * len(initial_answer_ids))
         cursor.execute(
             f"""
-            SELECT answer_id
+            SELECT DISTINCT group_id
             FROM answer_equivalents
-            WHERE group_id IN ({placeholders_groups})
+            WHERE answer_id IN ({placeholders})
             """,
-            group_ids,
+            initial_answer_ids,
         )
-        # Add all answers from the found groups to our set
-        for row in cursor.fetchall():
-            all_relevant_answer_ids.add(row[0])
-    else:
-        print("No explicit equivalence groups found for the initial answers.")
-        # We already initialized all_relevant_answer_ids with the initial matches
+        group_ids = [row[0] for row in cursor.fetchall()]
 
+        # Get all answer IDs from these groups
+        if group_ids:
+            placeholders = ",".join(["?"] * len(group_ids))
+            cursor.execute(
+                f"""
+                SELECT answer_id
+                FROM answer_equivalents
+                WHERE group_id IN ({placeholders})
+                """,
+                group_ids,
+            )
+            for row in cursor.fetchall():
+                all_relevant_answer_ids.add(row[0])
+
+    # Get all unique answer texts and their associated questions
     if not all_relevant_answer_ids:
-        # This shouldn't happen if initial_answer_ids was populated, but defensive check
-        print("Error: No relevant answer IDs found after group check.")
         return []
 
-    # --- Fetch details for all relevant answers and their questions ---
-    placeholders_all_answers = ",".join(["?"] * len(all_relevant_answer_ids))
+    placeholders = ",".join(["?"] * len(all_relevant_answer_ids))
     cursor.execute(
         f"""
-        SELECT
-            a.id as answer_id,
+        SELECT 
             a.answer_text,
             a.is_primary,
-            a.question_id,
-            a.source_file AS answer_source_file, -- Alias for clarity
-            q.id as question_id_from_q, -- For verification if needed
+            q.id as question_id,
             q.subject,
             q.type,
             q.text as question_text,
-            q.source_file AS question_source_file -- Alias for clarity
+            q.source_file
         FROM answers a
-        -- *** CORRECTED JOIN: Only on question_id ***
         JOIN questions q ON a.question_id = q.id
-        WHERE a.id IN ({placeholders_all_answers})
-        ORDER BY q.id, a.is_primary DESC, a.id -- Order by question, then primary answers first
+            AND q.type = 'Short Answer'
+        WHERE a.id IN ({placeholders})
+        ORDER BY a.answer_text, a.is_primary DESC
         """,
-        list(all_relevant_answer_ids),  # Pass the list of unique IDs
+        list(all_relevant_answer_ids),
     )
 
-    # Group results by question
-    results = {}
-    # No need for processed_answer_ids_in_question set anymore if we fetch unique IDs first
-
+    # Group by answer text
+    answers_dict = {}
     for row in cursor.fetchall():
-        (
-            ans_id,
-            ans_text,
-            is_primary,
-            q_id,
-            ans_source_file,
-            _,  # q_id_from_q (ignore)
-            subject,
-            q_type,
-            q_text,
-            q_source_file,  # Source file where question was first seen
-        ) = row
+        answer_text, is_primary, q_id, subject, q_type, q_text, source_file = row
 
-        # *** CORRECTED Grouping Key: Use question ID ***
-        question_key = q_id
-
-        if question_key not in results:
-            results[question_key] = {
-                "id": q_id,
-                "subject": subject,
-                "type": q_type,
-                "text": q_text,
-                "source_file": q_source_file,  # Show the file where the question was first ingested
-                "answers": [],
+        if answer_text not in answers_dict:
+            answers_dict[answer_text] = {
+                "text": answer_text,
+                "questions": [],
+                "is_primary_somewhere": False,
             }
 
-        # Add answer details to the question's list
-        results[question_key]["answers"].append(
-            {
-                "id": ans_id,
-                "text": ans_text,
-                "is_primary": bool(is_primary),
-                "source_file": ans_source_file,  # Show file where this specific answer came from
-            }
+        # Mark if this answer is primary in any question
+        if is_primary:
+            answers_dict[answer_text]["is_primary_somewhere"] = True
+
+        # Add the question if we haven't reached max_questions_per_answer
+        question_info = {
+            "id": q_id,
+            "subject": subject,
+            "type": q_type,
+            "text": q_text,
+            "source_file": source_file,
+        }
+
+        # Check if this question is already in the list for this answer
+        if not any(q["id"] == q_id for q in answers_dict[answer_text]["questions"]):
+            if len(answers_dict[answer_text]["questions"]) < max_questions_per_answer:
+                answers_dict[answer_text]["questions"].append(question_info)
+
+    # Calculate total question count for each answer
+    for answer_key in answers_dict:
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT q.id)
+            FROM answers a
+            JOIN questions q ON a.question_id = q.id
+            WHERE a.answer_text = ?
+            """,
+            (answer_key,),
         )
+        answers_dict[answer_key]["total_question_count"] = cursor.fetchone()[0]
 
-    return list(results.values())
+    # Convert to list and sort by total question count (descending)
+    results = list(answers_dict.values())
+    results.sort(key=lambda x: x["total_question_count"], reverse=True)
 
-
-def main():
-    """Command-line interface for the Science Bowl answer database tool."""
-    import argparse
-
-    # Initialize colorama
-    init()
-
-    parser = argparse.ArgumentParser(description="Science Bowl Answer Database Tool")
-    subparsers = parser.add_subparsers(dest="command", help="Commands")
-
-    # Ingest command
-    ingest_parser = subparsers.add_parser("ingest", help="Ingest questions from files")
-    ingest_parser.add_argument("path", type=str, help="File or directory path")
-
-    # Search command
-    search_parser = subparsers.add_parser(
-        "search", help="Search for equivalent answers"
-    )
-    search_parser.add_argument("answer", type=str, help="Answer text to search for")
-    search_parser.add_argument(
-        "--exact", action="store_true", help="Use exact matching"
-    )
-    search_parser.add_argument(
-        "--json", action="store_true", help="Output results in JSON format"
-    )
-
-    args = parser.parse_args()
-
-    # Connect to database
-    db_path = "science_bowl_answers.db"
-    conn = setup_database(db_path)
-
-    if args.command == "ingest":
-        path = Path(args.path)
-
-        if path.is_dir():
-            # Process all files in directory
-            total_questions = 0
-            for file_path in path.rglob("*.*"):
-                if file_path.suffix.lower() in [".txt", ".docx"]:
-                    try:
-                        count = process_document(file_path, conn)
-                        print(f"Processed {file_path.name}: {count} questions")
-                        total_questions += count
-                    except Exception as e:
-                        print(
-                            f"{Fore.RED}Error processing {file_path.name}: {e}{Style.RESET_ALL}"
-                        )
-
-            print(f"Total: {total_questions} questions ingested")
-        else:
-            # Process single file
-            count = process_document(path, conn)
-            print(f"Processed {path.name}: {count} questions")
-
-    elif args.command == "search":
-        # New format - group by question
-        results = find_equivalent_answers(conn, args.answer, not args.exact)
-
-        if not results:
-            print(f"No equivalent answers found for '{args.answer}'")
-        else:
-            print_results_colorized(results) if not args.json else print_results_json(
-                results
-            )
-
-    conn.close()
+    return results
 
 
-def print_results_colorized(results: List[Dict]):
-    """Print results in a color-coded format."""
+def print_answer_groups_colorized(results: List[Dict]):
+    """Print results grouped by answer text in a color-coded format."""
     if not results:
         print("No equivalent answers found.")
         return
 
-    total_questions = len(results)
-    total_answers = sum(len(q["answers"]) for q in results)
+    total_answers = len(results)
 
-    print(
-        f"Found {Fore.GREEN}{total_answers}{Style.RESET_ALL} answers across {Fore.GREEN}{total_questions}{Style.RESET_ALL} questions:"
-    )
+    print(f"Found {Fore.GREEN}{total_answers}{Style.RESET_ALL} unique answer texts:")
 
-    for question in results:
-        print(f"\n{Fore.YELLOW}Question ID: {question['id']}{Style.RESET_ALL}")
-        print(f"Subject: {question['subject']}, Type: {question['type']}")
-        print(f"Text: {Fore.WHITE}{question['text'][:80]}...{Style.RESET_ALL}")
-        print(f"Source File: {Fore.CYAN}{question['source_file']}{Style.RESET_ALL}")
+    for answer_group in results:
+        primary_marker = (
+            f" {Fore.RED}(PRIMARY){Style.RESET_ALL}"
+            if answer_group["is_primary_somewhere"]
+            else ""
+        )
+        total_questions = answer_group["total_question_count"]
+        displayed_questions = len(answer_group["questions"])
 
-        for answer in question["answers"]:
-            primary_marker = (
-                f" {Fore.RED}(PRIMARY){Style.RESET_ALL}" if answer["is_primary"] else ""
+        print(f"\n{Fore.GREEN}{answer_group['text']}{Style.RESET_ALL}{primary_marker}")
+        print(f"Appears in {Fore.YELLOW}{total_questions}{Style.RESET_ALL} questions")
+
+        if displayed_questions < total_questions:
+            print(f"Showing {displayed_questions} of {total_questions} questions:")
+
+        for question in answer_group["questions"]:
+            print(
+                f"  - {Fore.CYAN}[{question['subject']}]{Style.RESET_ALL} {question['text'][:80]}..."
             )
-            print(f"  - {Fore.GREEN}{answer['text']}{Style.RESET_ALL}{primary_marker}")
+            print(f"    Source: {question['source_file']}")
+
+        if displayed_questions < total_questions:
+            print(f"    ... and {total_questions - displayed_questions} more questions")
 
 
-def print_results_json(results: List[Dict]):
-    """Print results in JSON format."""
+def print_answer_groups_json(results: List[Dict]):
+    """Print answer groups in JSON format."""
     import json
 
     print(json.dumps(results, indent=2, ensure_ascii=False))
-
-
-if __name__ == "__main__":
-    main()
