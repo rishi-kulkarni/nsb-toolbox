@@ -461,9 +461,7 @@ def find_questions_by_answer(
             AND q.type = 'Short Answer'
         WHERE a.id IN ({placeholders})
         -- Exclude list-style questions
-        AND q.text NOT LIKE 'Rank%' 
-        AND q.text NOT LIKE 'Order%'
-        AND q.text NOT LIKE 'Identify%'
+        AND q.text NOT LIKE '%_)%'
         ORDER BY a.answer_text, a.is_primary DESC
         """,
         list(all_relevant_answer_ids),
