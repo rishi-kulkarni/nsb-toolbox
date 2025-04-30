@@ -458,7 +458,7 @@ def find_questions_by_answer(
         -- Exclude list-style questions
         AND q.text NOT LIKE '%_)%'
         -- Exclude the exact answer text to avoid duplicates
-        AND a.answer_text != (?)
+        AND a.answer_text != (?) COLLATE NOCASE
         ORDER BY a.answer_text, a.is_primary DESC
         """,
         list(all_relevant_answer_ids)
@@ -503,25 +503,27 @@ def find_questions_by_answer(
         SELECT a.answer_text, COUNT(DISTINCT q.id) as question_count
         FROM answers a
         JOIN questions q ON a.question_id = q.id
-        WHERE a.answer_text IN ({})
+        WHERE a.answer_text IN ({}) COLLATE NOCASE
         AND q.type = 'Short Answer'
         AND q.text NOT LIKE '%_)%'
-        AND a.answer_text != (?)
         GROUP BY a.answer_text
     """.format(",".join("?" * len(answers_dict))),
-        list(answers_dict.keys())
-        + [answer_text.upper().strip()],  # Ensure case-insensitive match
+        list(answers_dict.keys()),
     )
+
+    from IPython import embed
+
+    embed()
 
     # Update the dictionary with counts
     for answer_text, count in cursor.fetchall():
-        if answer_text in answers_dict:
-            answers_dict[answer_text]["total_question_count"] = count
+        if answer_text.upper().strip() in answers_dict:
+            answers_dict[answer_text.upper().strip()]["total_question_count"] = count
 
     # Set default count of 0 for any answers that weren't returned in the query
     for answer_text in answers_dict:
-        if "total_question_count" not in answers_dict[answer_text]:
-            answers_dict[answer_text]["total_question_count"] = 0
+        if "total_question_count" not in answers_dict[answer_text.upper().strip()]:
+            answers_dict[answer_text.upper().strip()]["total_question_count"] = 0
 
     # Convert to list and sort by total question count (descending)
     results = list(answers_dict.values())
