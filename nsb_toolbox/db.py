@@ -415,35 +415,30 @@ def find_questions_by_answer(
 
     # Find all groups containing these initial answers
     all_relevant_answer_ids = set(initial_answer_ids)
-    if initial_answer_ids:
-        placeholders = ",".join(["?"] * len(initial_answer_ids))
+    placeholders = ",".join(["?"] * len(initial_answer_ids))
+    cursor.execute(
+        f"""
+        SELECT DISTINCT group_id
+        FROM answer_equivalents
+        WHERE answer_id IN ({placeholders})
+        """,
+        initial_answer_ids,
+    )
+    group_ids = [row[0] for row in cursor.fetchall()]
+
+    # Get all answer IDs from these groups
+    if group_ids:
+        placeholders = ",".join(["?"] * len(group_ids))
         cursor.execute(
             f"""
-            SELECT DISTINCT group_id
+            SELECT answer_id
             FROM answer_equivalents
-            WHERE answer_id IN ({placeholders})
+            WHERE group_id IN ({placeholders})
             """,
-            initial_answer_ids,
+            group_ids,
         )
-        group_ids = [row[0] for row in cursor.fetchall()]
-
-        # Get all answer IDs from these groups
-        if group_ids:
-            placeholders = ",".join(["?"] * len(group_ids))
-            cursor.execute(
-                f"""
-                SELECT answer_id
-                FROM answer_equivalents
-                WHERE group_id IN ({placeholders})
-                """,
-                group_ids,
-            )
-            for row in cursor.fetchall():
-                all_relevant_answer_ids.add(row[0])
-
-    # Get all unique answer texts and their associated questions
-    if not all_relevant_answer_ids:
-        return []
+        for row in cursor.fetchall():
+            all_relevant_answer_ids.add(row[0])
 
     placeholders = ",".join(["?"] * len(all_relevant_answer_ids))
     cursor.execute(
@@ -462,9 +457,12 @@ def find_questions_by_answer(
         WHERE a.id IN ({placeholders})
         -- Exclude list-style questions
         AND q.text NOT LIKE '%_)%'
+        -- Exclude the exact answer text to avoid duplicates
+        AND a.answer_text != (?)
         ORDER BY a.answer_text, a.is_primary DESC
         """,
-        list(all_relevant_answer_ids),
+        list(all_relevant_answer_ids)
+        + [answer_text.upper().strip()],  # Ensure case-insensitive match
     )
 
     # Group by answer text
@@ -506,9 +504,13 @@ def find_questions_by_answer(
         FROM answers a
         JOIN questions q ON a.question_id = q.id
         WHERE a.answer_text IN ({})
+        AND q.type = 'Short Answer'
+        AND q.text NOT LIKE '%_)%'
+        AND a.answer_text != (?)
         GROUP BY a.answer_text
     """.format(",".join("?" * len(answers_dict))),
-        list(answers_dict.keys()),
+        list(answers_dict.keys())
+        + [answer_text.upper().strip()],  # Ensure case-insensitive match
     )
 
     # Update the dictionary with counts
