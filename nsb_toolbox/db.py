@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 import re
-import docx
 import sqlite3
 from dataclasses import dataclass
-from typing import List, Dict, Tuple
 from pathlib import Path
+from typing import TYPE_CHECKING
+
 from colorama import Fore, Style
+
+if TYPE_CHECKING:
+    from typing import Dict, List, Tuple
 
 
 @dataclass(frozen=True)
@@ -25,7 +30,9 @@ class Question:
 
 def extract_text_from_docx(file_path: Path) -> str:
     """Extract all text from a Word document."""
-    doc = docx.Document(file_path)
+    import docx
+
+    doc = docx.Document(str(file_path))
     return "\n".join(para.text for para in doc.paragraphs)
 
 

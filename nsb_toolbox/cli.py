@@ -3,20 +3,11 @@ from pathlib import Path
 
 from colorama import Fore, Style, init
 
-from .assign import EditedQuestions
-from .classes import Subject
-from .db import (
-    find_questions_by_answer,
-    print_answer_groups_colorized,
-    print_answer_groups_json,
-    process_document,
-    setup_database,
-)
-from .tables import RawQuestions
-from .yamlparsers import ParsedQuestionSpec
-
 
 def make(args):
+    from .classes import Subject
+    from .tables import RawQuestions
+
     path = Path(args.path).with_suffix(".docx")
     if args.subj is not None:
         args.subj = Subject.from_string(args.subj).value
@@ -26,6 +17,8 @@ def make(args):
 
 
 def format(args):
+    from .tables import RawQuestions
+
     questions = RawQuestions.from_docx_path(args.path)
     questions.format(
         force_capitalize=args.capitalize, line_after_stem=args.line_after_stem
@@ -34,6 +27,9 @@ def format(args):
 
 
 def assign(args):
+    from .assign import EditedQuestions
+    from .yamlparsers import ParsedQuestionSpec
+
     questions = EditedQuestions.from_docx_path(args.path)
     spec = ParsedQuestionSpec.from_yaml_path(args.config)
 
@@ -42,7 +38,11 @@ def assign(args):
 
 
 def db_ingest(args):
+    from .db import process_document, setup_database
+
     db_path = Path(args.db_path).expanduser()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
     print(f"Ingesting questions from {args.path} into database at {db_path}")
 
     conn = setup_database(str(db_path))
@@ -79,7 +79,16 @@ def db_ingest(args):
 
 
 def db_search(args):
+    from .db import (
+        find_questions_by_answer,
+        print_answer_groups_colorized,
+        print_answer_groups_json,
+        setup_database,
+    )
+
     db_path = Path(args.db_path).expanduser()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
     conn = setup_database(str(db_path))
     results = find_questions_by_answer(conn, args.answer, not args.exact)
 
@@ -112,7 +121,7 @@ def main():
     db_options_parser.add_argument(
         "--db-path",
         type=Path,
-        default="~/science_bowl_questions.db",
+        default="~/.nsb/science_bowl_questions.db",
         help="Path to the SQLite database file (default: ~/science_bowl_questions.db)",
     )
 
