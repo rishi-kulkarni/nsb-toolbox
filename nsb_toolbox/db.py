@@ -204,7 +204,7 @@ def setup_database(db_path: str) -> sqlite3.Connection:
         source_file TEXT,       -- File where this question was FIRST seen
         subject TEXT,
         type TEXT,
-        text TEXT NOT NULL UNIQUE -- Ensures question text is unique
+        text TEXT NOT NULL UNIQUE COLLATE NOCASE -- Case-insensitive unique question text
     )
     """)
 
@@ -213,7 +213,7 @@ def setup_database(db_path: str) -> sqlite3.Connection:
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         question_id INTEGER NOT NULL, -- References the unique question
         source_file TEXT,             -- File where THIS answer instance appeared
-        answer_text TEXT,
+        answer_text TEXT COLLATE NOCASE NOT NULL, -- Case-insensitive unique answer text
         is_primary BOOLEAN,
         FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
     )
