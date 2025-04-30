@@ -68,7 +68,7 @@ def parse_questions(text: str, source_file: str) -> List[Question]:
 
     # Split on TOSS-UP and BONUS headers
     # Updated pattern that includes ANSWER section in each match and handles various formats
-    pattern = r"(TOSS-UP|BONUS|VISUAL BONUS)\s*\n\s*(\d+)\)(.*?ANSWER:.*?)(?=(?:\n\s*(?:TOSS-UP|BONUS|VISUAL BONUS))|(?:\n_+\n)|(?:\n\n)|$)"
+    pattern = r"(TOSS-UP|BONUS|VISUAL BONUS)\s*\n\s*(\d+)\)(.*?ANSWER:.*?)(?=(?:\n\s*(?:TOSS-UP|BONUS|VISUAL BONUS|HIGH SCHOOL|MIDDLE SCHOOL|~~~))|(?:\n_+\n)|(?:\n\n)|$)"
     matches = re.finditer(pattern, text, re.DOTALL)
 
     questions = []
@@ -471,6 +471,7 @@ def find_questions_by_answer(
     answers_dict = {}
     for row in cursor.fetchall():
         answer_text, is_primary, q_id, subject, q_type, q_text, source_file = row
+        answer_text = answer_text.upper().strip()
 
         if answer_text not in answers_dict:
             answers_dict[answer_text] = {
