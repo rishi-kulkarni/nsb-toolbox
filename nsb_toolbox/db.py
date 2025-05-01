@@ -511,10 +511,6 @@ def find_questions_by_answer(
         list(answers_dict.keys()),
     )
 
-    from IPython import embed
-
-    embed()
-
     # Update the dictionary with counts
     for answer_text, count in cursor.fetchall():
         if answer_text.upper().strip() in answers_dict:

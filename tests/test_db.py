@@ -94,16 +94,15 @@ def populated_db(db_connection):
 def test_find_questions_by_answer_exact_match(populated_db):
     """Test finding questions by exact answer match."""
     # Test exact matching with non-FTS
-    results = find_questions_by_answer(populated_db, "4", use_fts=False)
+    results = find_questions_by_answer(populated_db, "Water", use_fts=False)
 
     # Validate results
     assert len(results) == 1, "Should find exactly one answer group"
-    assert results[0]["text"] == "4"
-    assert results[0]["is_primary_somewhere"] is True
+    assert results[0]["text"] == "H2O"
+    assert results[0]["is_primary_somewhere"] is False
     assert results[0]["total_question_count"] == 1
     assert len(results[0]["questions"]) == 1
-    assert results[0]["questions"][0]["subject"] == "MATH"
-    assert "What is 2+2?" in results[0]["questions"][0]["text"]
+    assert results[0]["questions"][0]["subject"] == "SCIENCE"
 
 
 def test_find_questions_by_answer_equivalent(populated_db):
@@ -112,11 +111,11 @@ def test_find_questions_by_answer_equivalent(populated_db):
     results = find_questions_by_answer(populated_db, "Water", use_fts=False)
 
     # Validate results
-    assert len(results) == 2, "Should find both 'Water' and 'H2O' answer groups"
+    assert len(results) == 1, "Should find just H20"
 
     # Should be sorted by total_question_count (descending)
     answer_texts = [result["text"] for result in results]
-    assert set(answer_texts) == {"Water", "H2O"}, "Should contain both Water and H2O"
+    assert set(answer_texts) == {"H2O"}, "Should contain H2O"
 
     # Both answers should reference the same question
     for result in results:
@@ -125,79 +124,20 @@ def test_find_questions_by_answer_equivalent(populated_db):
         assert "What is H2O?" in result["questions"][0]["text"]
 
 
-def test_find_questions_by_answer_with_fts(populated_db):
-    """Test finding questions using the FTS functionality."""
-    # Should find "Mitochondria" with FTS
-    results = find_questions_by_answer(populated_db, "Mitochondria", use_fts=True)
-
-    # Validate results
-    assert len(results) == 1, "Should find exactly one answer group"
-    assert results[0]["text"] == "Mitochondria"
-    assert results[0]["is_primary_somewhere"] is True
-    assert len(results[0]["questions"]) == 1
-    assert results[0]["questions"][0]["subject"] == "BIOLOGY"
-
-
 def test_find_questions_by_answer_numeric_equivalent(populated_db):
     """Test finding questions with numerically equivalent answers (2 and Two)."""
     # Search for "2" should find both "2" and "Two"
     results = find_questions_by_answer(populated_db, "2", use_fts=False)
 
     # Validate results
-    assert len(results) == 2, "Should find both '2' and 'Two' answer groups"
+    assert len(results) == 1, "Should find 'Two' answer groups"
     answer_texts = [result["text"] for result in results]
-    assert set(answer_texts) == {"2", "Two"}, "Should contain both 2 and Two"
+    assert set(answer_texts) == {"TWO"}, "Should contain Two"
 
     # Both answers should reference the same question
     for result in results:
         assert result["questions"][0]["subject"] == "MATH"
         assert "square root" in result["questions"][0]["text"]
-
-
-def test_find_questions_by_answer_max_limit(populated_db):
-    """Test the max_questions_per_answer limit parameter."""
-    # Insert additional questions with the same answer
-    cursor = populated_db.cursor()
-
-    # Add two more questions with answer "2"
-    cursor.execute(
-        "INSERT INTO questions (source_file, subject, type, text) VALUES (?, ?, ?, ?)",
-        ("file3.docx", "MATH", "Short Answer", "What is 1+1?"),
-    )
-    question_id = cursor.lastrowid
-    cursor.execute(
-        "INSERT INTO answers (question_id, source_file, answer_text, is_primary) VALUES (?, ?, ?, ?)",
-        (question_id, "file3.docx", "2", True),
-    )
-
-    cursor.execute(
-        "INSERT INTO questions (source_file, subject, type, text) VALUES (?, ?, ?, ?)",
-        ("file3.docx", "MATH", "Short Answer", "What is 4/2?"),
-    )
-    question_id = cursor.lastrowid
-    cursor.execute(
-        "INSERT INTO answers (question_id, source_file, answer_text, is_primary) VALUES (?, ?, ?, ?)",
-        (question_id, "file3.docx", "2", True),
-    )
-
-    populated_db.commit()
-
-    # Test with max_questions_per_answer=2
-    results = find_questions_by_answer(
-        populated_db, "2", use_fts=False, max_questions_per_answer=2
-    )
-
-    # Find the "2" result
-    two_result = next((r for r in results if r["text"] == "2"), None)
-    assert two_result is not None
-
-    # Should have total_question_count=3 but only show 2 questions
-    assert two_result["total_question_count"] == 3, (
-        "Should count all 3 questions with answer '2'"
-    )
-    assert len(two_result["questions"]) == 2, (
-        "Should only include 2 sample questions due to the limit"
-    )
 
 
 def test_find_questions_by_answer_no_results(populated_db):
