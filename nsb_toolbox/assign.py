@@ -1,3 +1,4 @@
+import re
 from functools import reduce
 from typing import Optional
 from typing_extensions import Self
@@ -9,6 +10,8 @@ from scipy.optimize import linear_sum_assignment
 
 
 from ._base_questions import BaseScienceBowlQuestions
+from .classes import TossUpBonus
+from .tables import COL_MAPPING
 from .yamlparsers import ParsedQuestionSpec
 
 
@@ -112,6 +115,129 @@ class EditedQuestions(BaseScienceBowlQuestions):
                 self.qletters[q_idx].text = question_spec.qletters[spec_idx]
         else:
             print("\nNot writing assignments as this is a dry run.")
+
+    def sort_assignments(self, question_spec: ParsedQuestionSpec) -> None:
+        """Reorders the question rows to follow the YAML configuration order."""
+        if not self.document.tables:
+            return
+
+        table = self.document.tables[0]
+        data_rows = list(table.rows)[1:]
+
+        if not data_rows:
+            return
+
+        tub_lookup = {
+            TossUpBonus.TOSS_UP.value: 0,
+            TossUpBonus.BONUS.value: 1,
+            TossUpBonus.VISUAL_BONUS.value: 2,
+        }
+
+        assigned_rows = []
+        unassigned_rows = []
+
+        for idx, row in enumerate(data_rows):
+            tub_text = row.cells[COL_MAPPING["TUB"]].text.strip()
+            set_text = row.cells[COL_MAPPING["Set"]].text.strip()
+            round_text = row.cells[COL_MAPPING["Rd"]].text.strip()
+            letter_text = row.cells[COL_MAPPING["Q Letter"]].text.strip()
+
+            if not (tub_text and set_text and round_text and letter_text):
+                unassigned_rows.append((idx, row))
+                continue
+
+            try:
+                tub_value = TossUpBonus.from_string(tub_text).value
+            except ValueError:
+                unassigned_rows.append((idx, row))
+                continue
+
+            assigned_rows.append(
+                {
+                    "row": row,
+                    "set": set_text,
+                    "round": round_text,
+                    "letter": letter_text.upper(),
+                    "tub": tub_value,
+                    "original_index": idx,
+                }
+            )
+
+        if not assigned_rows:
+            return
+
+        set_order = {}
+        prefix_order = {}
+        round_order = {}
+        letter_order = {}
+
+        round_pattern = re.compile(r"^([^\d]*)(\d+)(.*)$")
+
+        def decompose_round(value: str):
+            match = round_pattern.match(value)
+            if match:
+                prefix, number, suffix = match.groups()
+                return prefix, int(number), suffix
+            return value, float("inf"), ""
+
+        for detail in question_spec.question_list:
+            set_order.setdefault(detail.set, len(set_order))
+
+            prefix, number, suffix = decompose_round(detail.round)
+            prefix_map = prefix_order.setdefault(detail.set, {})
+            prefix_idx = prefix_map.setdefault(prefix, len(prefix_map))
+
+            round_map = round_order.setdefault(detail.set, {})
+            round_map.setdefault(
+                detail.round,
+                (prefix_idx, number, suffix, len(round_map)),
+            )
+
+            letter_order.setdefault(detail.letter.upper(), len(letter_order))
+
+        def round_sort(info):
+            set_rounds = round_order.get(info["set"], {})
+            if info["round"] in set_rounds:
+                return set_rounds[info["round"]]
+
+            prefix, number, suffix = decompose_round(info["round"])
+            prefix_idx = prefix_order.get(info["set"], {}).get(
+                prefix,
+                len(prefix_order.get(info["set"], {})),
+            )
+            return (prefix_idx, number, suffix, info["original_index"])
+
+        def sort_key(info):
+            set_idx = set_order.get(info["set"], len(set_order))
+            round_idx = round_sort(info)
+            letter_idx = letter_order.get(
+                info["letter"], len(letter_order) + info["original_index"]
+            )
+            tub_idx = tub_lookup.get(info["tub"], len(tub_lookup))
+            return (set_idx, round_idx, letter_idx, tub_idx, info["original_index"])
+
+        assigned_rows.sort(key=sort_key)
+
+        tbl = table._tbl
+        for row in data_rows:
+            tbl.remove(row._tr)
+
+        for info in assigned_rows:
+            tbl.append(info["row"]._tr)
+
+        for _, row in sorted(unassigned_rows, key=lambda item: item[0]):
+            tbl.append(row._tr)
+
+        self._cells = self.document.tables[0]._cells
+        for attr in (
+            "tubs",
+            "difficulties",
+            "qtypes",
+            "subcategories",
+            "writers",
+            "stats",
+        ):
+            self.__dict__.pop(attr, None)
 
     def _raise_assignment_failure(
         self, question_spec: ParsedQuestionSpec, assignment_costs: np.ndarray
