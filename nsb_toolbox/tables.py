@@ -480,6 +480,14 @@ class TuBCellFormatter(CellFormatter):
 
 
 class SubjectCellFormatter(CellFormatter):
+    def preprocess_format(self, cell: _Cell) -> _Cell:
+        cell = preprocess_cell(cell)
+        if cell.text.strip() == "":
+            highlight_cell_text(cell, WD_COLOR_INDEX.RED)
+            logger.error("Missing subject.")
+            return cell
+        return self.format(cell)
+
     def format(self, cell: _Cell) -> _Cell:
         subject_match = SUBJECT_RE.match(cell.text)
 

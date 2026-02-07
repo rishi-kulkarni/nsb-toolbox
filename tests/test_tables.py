@@ -223,6 +223,20 @@ class TestFormatSubjectErrors:
         assert test_run.font.highlight_color == WD_COLOR_INDEX.RED
 
 
+class TestFormatSubjectMissing:
+    def test_missing_subject(self, caplog):
+        doc = Document()
+        table = doc.add_table(rows=1, cols=1)
+        cell = table.rows[0].cells[0]
+        cell.text = ""
+
+        formatter = tables.SubjectCellFormatter()
+        result = formatter.preprocess_format(cell)
+
+        assert result.paragraphs[0].runs[0].font.highlight_color == WD_COLOR_INDEX.RED
+        assert "Missing subject." in caplog.text
+
+
 @pytest.fixture
 def format_question_rows():
     test_data = Document(data_dir / "test_question_parser.docx")
