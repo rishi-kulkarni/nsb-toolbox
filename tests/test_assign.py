@@ -1,9 +1,11 @@
+import re
 from pathlib import Path
 
 import numpy as np
 import pytest
 from nsb_toolbox.assign import EditedQuestions
 from nsb_toolbox.importers import load_doc
+from nsb_toolbox.tables import COL_MAPPING
 from nsb_toolbox.yamlparsers import ParsedQuestionSpec
 
 data_dir = Path(__file__).parent / "test_data"
@@ -121,6 +123,91 @@ class TestEditedQuestionsAssign:
 
         # check that each question in the spec was assigned
         assert len(assignments) == len(question_spec.question_list)
+
+    def test_sort_assignments_orders_rows(self, question_spec, doc_path):
+
+        questions = EditedQuestions.from_docx_path(doc_path)
+        questions.assign(question_spec)
+        questions.sort_assignments(question_spec)
+
+        table = questions.document.tables[0]
+        data_rows = list(table.rows)[1:]
+
+        assigned_rows = [
+            row for row in data_rows if row.cells[COL_MAPPING["Rd"]].text.strip()
+        ]
+
+        expected_count = len(question_spec.question_list)
+        assert len(assigned_rows) >= expected_count
+
+        observed = [
+            (
+                row.cells[COL_MAPPING["Set"]].text.strip(),
+                row.cells[COL_MAPPING["Rd"]].text.strip(),
+                row.cells[COL_MAPPING["Q Letter"]].text.strip().upper(),
+                row.cells[COL_MAPPING["TUB"]].text.strip(),
+            )
+            for row in assigned_rows[:expected_count]
+        ]
+
+        set_order = {}
+        prefix_order = {}
+        round_priority = {}
+        letter_order = {}
+
+        round_pattern = re.compile(r"^([^\d]*)(\d+)(.*)$")
+
+        def decompose_round(value: str):
+            match = round_pattern.match(value)
+            if match:
+                prefix, number, suffix = match.groups()
+                return prefix, int(number), suffix
+            return value, float("inf"), ""
+
+        for detail in question_spec.question_list:
+            set_order.setdefault(detail.set, len(set_order))
+
+            prefix, number, suffix = decompose_round(detail.round)
+            prefix_map = prefix_order.setdefault(detail.set, {})
+            prefix_idx = prefix_map.setdefault(prefix, len(prefix_map))
+
+            round_map = round_priority.setdefault(detail.set, {})
+            round_map.setdefault(
+                detail.round,
+                (prefix_idx, number, suffix, len(round_map)),
+            )
+
+            letter_order.setdefault(detail.letter.upper(), len(letter_order))
+
+        def round_key(detail):
+            round_map = round_priority.get(detail.set, {})
+            if detail.round in round_map:
+                return round_map[detail.round]
+            prefix, number, suffix = decompose_round(detail.round)
+            prefix_idx = prefix_order.get(detail.set, {}).get(
+                prefix,
+                len(prefix_order.get(detail.set, {})),
+            )
+            return (prefix_idx, number, suffix, len(round_map))
+
+        tub_priority = {"TOSS-UP": 0, "BONUS": 1, "VISUAL BONUS": 2}
+
+        expected_details = sorted(
+            question_spec.question_list,
+            key=lambda detail: (
+                set_order[detail.set],
+                round_key(detail),
+                letter_order[detail.letter.upper()],
+                tub_priority[detail.tub.value],
+            ),
+        )
+
+        expected = [
+            (detail.set, detail.round, detail.letter, detail.tub.value)
+            for detail in expected_details
+        ]
+
+        assert observed == expected
 
     def test_user_checkin_before_reassign(self, question_spec, doc_path, monkeypatch):
 

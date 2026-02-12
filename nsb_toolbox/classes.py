@@ -24,6 +24,7 @@ class TossUpBonus(Enum):
 
         _ALIASES = {
             "tu": TossUpBonus.TOSS_UP,
+            "t": TossUpBonus.TOSS_UP,
             "toss-up": TossUpBonus.TOSS_UP,
             "b": TossUpBonus.BONUS,
             "bonus": TossUpBonus.BONUS,

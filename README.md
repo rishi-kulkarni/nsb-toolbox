@@ -134,6 +134,8 @@ Question 7: Question type is MC, but has no choices.
 
 ```nsb assign path/to/nsb/questions.docx -c path/to/config.yaml```
 
+Passing the optional `--sort` argument will sort the assigned questions in the order specified in the configuration file.
+
 It also takes an optional `--dry-run` argument, which will report statistics on the assignment procedure, but will not write the successful assignment to disk. This is primarily useful for determining what additional questions of a given difficulty or type are required. For example:
 
 ```zsh
