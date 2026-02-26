@@ -97,7 +97,7 @@ COL_COLORS = {
     "Subcat": None,
 }
 
-TUB_RE = re.compile(r"\s*(TOSS-UP|BONUS|VISUAL BONUS|TU|B|VB)\b", re.IGNORECASE)
+TUB_RE = re.compile(r"\s*(TOSS-UP|BONUS|VISUAL BONUS|TU|T|B|VB)\b", re.IGNORECASE)
 SUBJECT_RE = re.compile(
     r"\s*(BIOLOGY|B|CHEMISTRY|C|EARTH AND SPACE|ES|ENERGY|EN|MATH|M|PHYSICS|P)\b",
     re.IGNORECASE,

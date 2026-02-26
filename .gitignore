@@ -166,3 +166,6 @@ cython_debug/
 #.idea/
 
 questions/
+
+# MacOS
+.DS_Store

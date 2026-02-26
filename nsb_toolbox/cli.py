@@ -34,6 +34,10 @@ def assign(args):
     spec = ParsedQuestionSpec.from_yaml_path(args.config)
 
     questions.assign(spec, dry_run=args.dry_run)
+
+    if getattr(args, "sort", False) and not args.dry_run:
+        questions.sort_assignments(spec)
+
     questions.save(args.path)
 
 
@@ -192,6 +196,11 @@ def main():
         "--dry-run",
         action="store_true",
         help="performs assignment, but doesn't save results",
+    )
+    assign_parser.add_argument(
+        "--sort",
+        action="store_true",
+        help="after assigning, sort rows by YAML set/round order",
     )
     assign_parser.set_defaults(func=assign)
 
